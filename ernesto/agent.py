@@ -111,7 +111,9 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
         }
         if state.json_mode:
             call_kwargs["response_format"] = {"type": "json_object"}
-        if state.tools_enabled and schemas:
+        # JSON mode (response_format json_object) e' incompatibile col tool calling:
+        # il modello emetterebbe un blob JSON testuale invece di tool calls native.
+        if state.tools_enabled and schemas and not state.json_mode:
             call_kwargs["tools"] = schemas
 
         try:

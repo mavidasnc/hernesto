@@ -102,6 +102,12 @@ parte comunque con un avviso.
 
 Il prompt mostra sempre i cumulativi di sessione: `Tu [24.1k in · 6.3k out · $0.0082]>`.
 
+> **Nota — JSON mode e strumenti sono incompatibili.** Se attivi il JSON mode
+> (alla selezione del modello con `/model`), gli strumenti vengono disattivati:
+> `response_format: json_object` impedisce ai provider di emettere tool call
+> native. Per usare gli strumenti lascia il JSON mode disattivato; `/context`
+> segnala lo stato ("Strumenti: DISATTIVATI (JSON mode attivo)").
+
 ## Policy di sicurezza
 
 - **Sandbox filesystem**: ogni path è risolto con `realpath` e deve restare

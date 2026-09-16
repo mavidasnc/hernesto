@@ -143,7 +143,14 @@ def cmd_model(state: SessionState) -> None:
     # Il cambio modello azzera sempre la conversazione
     state.reset_messages()
     suffix = " | JSON mode attivo" if json_mode else ""
-    print(f"Modello: {selected.label}{suffix} — conversazione azzerata.\n")
+    print(f"Modello: {selected.label}{suffix} — conversazione azzerata.")
+    if json_mode:
+        print(
+            "[Avviso] JSON mode attivo: gli strumenti sono disattivati "
+            "(incompatibili con response_format json_object).\n"
+            "         Per usare gli strumenti disattiva il JSON mode con /model."
+        )
+    print()
 
 
 def cmd_save(state: SessionState) -> None:
@@ -182,9 +189,12 @@ def cmd_context(state: SessionState, tools: list[Tool]) -> None:
     print(f"Messaggi in storia: {len(state.messages)} (~{fmt_tokens(state.history_token_estimate())} tok stimati)")
     native = [t.name for t in tools if not t.name.startswith("mcp__")]
     mcp = [t.name for t in tools if t.name.startswith("mcp__")]
-    print(f"Strumenti nativi ({len(native)}): {', '.join(native)}")
-    if mcp:
-        print(f"Strumenti MCP ({len(mcp)}): {', '.join(mcp)}")
+    if state.json_mode:
+        print("Strumenti: DISATTIVATI (JSON mode attivo)")
+    else:
+        print(f"Strumenti nativi ({len(native)}): {', '.join(native)}")
+        if mcp:
+            print(f"Strumenti MCP ({len(mcp)}): {', '.join(mcp)}")
     print(f"YOLO: {'attivo' if state.yolo else 'no'} · dry-run: {'attivo' if state.dry_run else 'no'}")
     if state.logger:
         print(f"Log: {state.logger.path}")

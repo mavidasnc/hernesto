@@ -5,6 +5,12 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.1.1] - 2026-09-16
+
+### Corretto
+- **JSON mode e tool calling non sono più inviati insieme**: con `response_format: json_object` attivo, alcuni provider (es. Qwen 3.8) rispondevano con un blob JSON testuale che *descriveva* una tool call invece di eseguirla, quindi gli strumenti non partivano mai. Ora in JSON mode gli strumenti sono disattivati, con avviso esplicito all'attivazione in `/model` e indicazione in `/context` ("Strumenti: DISATTIVATI (JSON mode attivo)").
+- Aggiunti test di regressione: con JSON mode i `tools` non vengono passati all'API; senza JSON mode sì (45 test totali).
+
 ## [0.1.0] - 2026-09-16
 
 ### Aggiunto
