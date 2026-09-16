@@ -14,6 +14,23 @@ if TYPE_CHECKING:
 
 SANDBOX_ERROR = "ERRORE: path fuori dalla sandbox"
 
+# Cartelle "rumore" escluse dalla ricorsione: contengono migliaia di file
+# generati che inonderebbero il contesto del modello senza alcuna utilita'.
+NOISE_DIRS = frozenset({
+    ".git", ".venv", "venv", "node_modules", "__pycache__",
+    ".pytest_cache", ".ruff_cache", ".mypy_cache", "dist", "build",
+})
+
+
+def _walk_filtered(target: Path) -> list[Path]:
+    """Ricorsione con potatura delle NOISE_DIRS (rglob non permette di potare)."""
+    entries: list[Path] = []
+    for root, dirs, files in os.walk(target):
+        dirs[:] = sorted(d for d in dirs if d not in NOISE_DIRS)
+        entries.extend(Path(root) / d for d in dirs)
+        entries.extend(Path(root) / f for f in sorted(files))
+    return entries
+
 
 def resolve_in_sandbox(workdir: Path, path: str) -> Path | None:
     """Risolve `path` dentro la workdir; None se esce dalla sandbox (inclusi symlink)."""
@@ -28,7 +45,10 @@ class ListFilesTool(Tool):
     """Elenca file e cartelle con dimensione dentro la cartella di lavoro."""
 
     name = "list_files"
-    description = "Elenca file e cartelle con dimensione dentro la cartella di lavoro."
+    description = (
+        "Elenca file e cartelle con dimensione dentro la cartella di lavoro. "
+        "La ricorsione esclude le cartelle generate (.git, .venv, node_modules, ...)."
+    )
     parameters: ClassVar[dict[str, Any]] = {
         "type": "object",
         "properties": {
@@ -49,7 +69,7 @@ class ListFilesTool(Tool):
                 return f"ERRORE: percorso inesistente: {path}"
             if target.is_file():
                 return f"{target.stat().st_size:>10}  {path}"
-            entries = sorted(target.rglob("*") if recursive else target.iterdir())
+            entries = _walk_filtered(target) if recursive else sorted(target.iterdir())
             lines = []
             for entry in entries[:MAX_LIST_ENTRIES]:
                 try:

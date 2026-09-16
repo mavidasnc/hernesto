@@ -91,6 +91,21 @@ def test_list_files(state: SessionState) -> None:
     assert "sub/" in result
 
 
+def test_list_files_recursive_skips_noise_dirs(state: SessionState) -> None:
+    """La ricorsione pota le cartelle generate (.git, .venv, __pycache__, ...)."""
+    (state.workdir / "app.py").write_text("x = 1", encoding="utf-8")
+    noise = state.workdir / ".venv" / "lib"
+    noise.mkdir(parents=True)
+    (noise / "junk.py").write_text("pass", encoding="utf-8")
+    git = state.workdir / ".git"
+    git.mkdir()
+    (git / "config").write_text("[core]", encoding="utf-8")
+    result = ListFilesTool(state).run(path=".", recursive=True)
+    assert "app.py" in result
+    assert ".venv" not in result
+    assert ".git" not in result
+
+
 def test_write_file_dry_run(state: SessionState) -> None:
     """In dry-run write_file non tocca il disco."""
     state.dry_run = True

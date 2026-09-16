@@ -5,6 +5,11 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.1.2] - 2026-09-16
+
+### Corretto
+- **`list_files` ricorsivo non elenca più le cartelle generate** (`.git`, `.venv`, `venv`, `node_modules`, `__pycache__`, `.pytest_cache`, `.ruff_cache`, `.mypy_cache`, `dist`, `build`): prima una ricorsione sulla root poteva iniettare ~8k token di rumore nel contesto, rispediti all'API a ogni step del loop (misurato in una sessione reale: prompt passato da ~2k a ~17k token per step, costo sessione quasi triplicato). La descrizione dello strumento dichiara l'esclusione al modello.
+
 ## [0.1.1] - 2026-09-16
 
 ### Corretto
