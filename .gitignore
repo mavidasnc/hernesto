@@ -1,0 +1,16 @@
+# Segreti e credenziali
+.env
+# contiene solo istruzioni, ma per sicurezza resta fuori dal repo
+credentials.md
+
+# Output di sessione
+logs/
+saves/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
