@@ -8,7 +8,16 @@ e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/)
 ## [Non rilasciato]
 
 ### Aggiunto
+- **Strumento `fetch_url`**: scarica una pagina web e restituisce il testo leggibile, senza HTML, script e menu (parser basato su `html.parser` della stdlib, nessuna nuova dipendenza). Prima, per leggere un risultato di ricerca, il modello poteva solo usare `curl` da `run_command` e riceveva HTML grezzo troncato a meta'.
 - **`RESEND_FROM_NAME`**: nome visualizzato del mittente usato come default da `send_email` quando il modello non passa `from_name` (prima il default era la costante `Chat CLI` e la variabile veniva ignorata). Documentata in `credentials.md` insieme ai vincoli sul dominio verificato.
+
+### Corretto
+- **`run_command` non perde piu' l'output non decodificabile**: la `Popen` usava `text=True` senza `encoding`, quindi la decodifica avveniva nella codifica locale (`cp1252` su Windows) dentro il thread lettore di `communicate()`; l'eccezione non risaliva al chiamante e lo strumento restituiva `exit 0` con output vuoto. In una sessione reale il modello ha interpretato il vuoto come "pagina protetta da JS" e ha bruciato quattro step e ~18k token. Ora `encoding="utf-8", errors="replace"`.
+- **`brave_search` ritenta una volta sul `429`** dopo 1,1 secondi (il piano gratuito consente 1 richiesta al secondo, e nel loop agentico due ricerche consecutive partono a pochi millisecondi di distanza); se il limite persiste l'errore lo nomina invece di essere generico. Gli snippet vengono ripuliti dal markup HTML, che finora entrava nel contesto a ogni ricerca.
+
+### Cambiato
+- **`run_command` separa stdout e stderr** (prima `stderr=STDOUT` li fondeva): con entrambi presenti l'output e' etichettato, con tetti di troncamento indipendenti (8000 caratteri per stdout, 2000 per stderr), cosi' il rumore di npm o pip non mangia il segnale.
+- **`run_command` non eredita piu' lo stdin del terminale** (`stdin=DEVNULL`): un comando interattivo fallisce subito con un errore leggibile invece di restare appeso fino al timeout di 120 secondi consumando l'input dell'utente.
 
 ## [0.1.3] - 2026-09-16
 

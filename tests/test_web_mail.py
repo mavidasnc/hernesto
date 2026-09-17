@@ -6,14 +6,26 @@ import pytest
 
 from ernesto.session import SessionState
 from ernesto.tools.mail import SendEmailTool
-from ernesto.tools.web import BraveSearchTool
+from ernesto.tools.web import RATE_LIMIT_WAIT, BraveSearchTool, FetchUrlTool
 
 
 class FakeResponse:
     """Risposta HTTP finta per i test."""
 
-    def __init__(self, payload: dict) -> None:
-        self._payload = payload
+    def __init__(
+        self,
+        payload: dict | None = None,
+        status_code: int = 200,
+        content: bytes = b"",
+        headers: dict[str, str] | None = None,
+        url: str = "https://example.com/",
+    ) -> None:
+        self._payload = payload or {}
+        self.status_code = status_code
+        self.content = content
+        self.headers = headers or {}
+        self.url = url
+        self.encoding = "utf-8"
 
     def raise_for_status(self) -> None:
         pass
@@ -63,6 +75,113 @@ def test_brave_search_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("ernesto.tools.web.httpx.get", failing_get)
     result = BraveSearchTool().run(query="test")
     assert result.startswith("ERRORE")
+
+
+def test_brave_retry_su_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Un 429 viene ritentato una volta dopo l'attesa minima, poi la ricerca riesce."""
+    monkeypatch.setenv("BRAVE_API_KEY", "test-key")
+    payload = {"web": {"results": [{"title": "R", "url": "https://e.com", "description": "s"}]}}
+    risposte = [FakeResponse(status_code=429), FakeResponse(payload)]
+    attese: list[float] = []
+    monkeypatch.setattr("ernesto.tools.web.time.sleep", attese.append)
+    monkeypatch.setattr("ernesto.tools.web.httpx.get", lambda *a, **k: risposte.pop(0))
+    result = BraveSearchTool().run(query="test")
+    assert "1. R" in result
+    assert attese == [RATE_LIMIT_WAIT]
+
+
+def test_brave_429_persistente_spiega_il_limite(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Se il 429 si ripete, l'errore nomina il limite invece di essere generico."""
+    monkeypatch.setenv("BRAVE_API_KEY", "test-key")
+    monkeypatch.setattr("ernesto.tools.web.time.sleep", lambda _s: None)
+    monkeypatch.setattr("ernesto.tools.web.httpx.get", lambda *a, **k: FakeResponse(status_code=429))
+    result = BraveSearchTool().run(query="test")
+    assert result.startswith("ERRORE")
+    assert "1 richiesta al secondo" in result
+
+
+def test_brave_snippet_senza_html(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Il markup degli snippet non entra nel contesto del modello."""
+    monkeypatch.setenv("BRAVE_API_KEY", "test-key")
+    payload = {
+        "web": {
+            "results": [
+                {
+                    "title": "Prezzi &amp; offerte",
+                    "url": "https://e.com",
+                    "description": "Sono <strong>gratis</strong> per tutti",
+                }
+            ]
+        }
+    }
+    monkeypatch.setattr("ernesto.tools.web.httpx.get", lambda *a, **k: FakeResponse(payload))
+    result = BraveSearchTool().run(query="test")
+    assert "<strong>" not in result
+    assert "Sono gratis per tutti" in result
+    assert "Prezzi & offerte" in result
+
+
+# ---------------------------------------------------------------------------
+# fetch_url
+# ---------------------------------------------------------------------------
+
+PAGINA = b"""<html><head><title>Titolo pagina</title>
+<style>body {color: red}</style></head>
+<body><nav>menu da ignorare</nav>
+<h1>Intestazione</h1><p>Primo paragrafo con &egrave; accentata.</p>
+<script>var x = "codice da ignorare";</script>
+<p>Secondo paragrafo.</p></body></html>"""
+
+
+def _fake_html(monkeypatch: pytest.MonkeyPatch, content: bytes = PAGINA, content_type: str = "text/html") -> None:
+    response = FakeResponse(content=content, headers={"content-type": content_type})
+    monkeypatch.setattr("ernesto.tools.web.httpx.get", lambda *a, **k: response)
+
+
+def test_fetch_url_estrae_testo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Il testo visibile viene estratto; script, style e menu restano fuori."""
+    _fake_html(monkeypatch)
+    result = FetchUrlTool().run(url="https://example.com")
+    assert "Titolo: Titolo pagina" in result
+    assert "Primo paragrafo con è accentata." in result
+    assert "Secondo paragrafo." in result
+    assert "codice da ignorare" not in result
+    assert "menu da ignorare" not in result
+    assert "color: red" not in result
+    assert "<p>" not in result
+
+
+def test_fetch_url_content_type_rifiutato(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Un PDF o un'immagine non vengono riversati nel contesto."""
+    _fake_html(monkeypatch, content=b"%PDF-1.7", content_type="application/pdf")
+    result = FetchUrlTool().run(url="https://example.com/doc.pdf")
+    assert result.startswith("ERRORE")
+    assert "non testuale" in result
+
+
+def test_fetch_url_schema_rifiutato() -> None:
+    """Sono ammessi solo http e https."""
+    assert FetchUrlTool().run(url="file:///etc/passwd").startswith("ERRORE")
+
+
+def test_fetch_url_errore_rete(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Un errore di rete diventa una stringa di errore, nessuna eccezione."""
+
+    def failing_get(*args: object, **kwargs: object) -> FakeResponse:
+        raise ConnectionError("rete giu'")
+
+    monkeypatch.setattr("ernesto.tools.web.httpx.get", failing_get)
+    result = FetchUrlTool().run(url="https://example.com")
+    assert result.startswith("ERRORE")
+
+
+def test_fetch_url_tronca(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Oltre max_chars il testo viene troncato con nota."""
+    lungo = b"<html><body><p>" + b"parola " * 2000 + b"</p></body></html>"
+    _fake_html(monkeypatch, content=lungo)
+    result = FetchUrlTool().run(url="https://example.com", max_chars=200)
+    assert "troncato" in result
+    assert len(result) < 500
 
 
 # ---------------------------------------------------------------------------

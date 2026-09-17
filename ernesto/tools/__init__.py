@@ -49,7 +49,7 @@ def build_native_tools(state: SessionState, confirm_fn: ConfirmFn) -> list[Tool]
     from .filesystem import EditFileTool, ListFilesTool, ReadFileTool, WriteFileTool
     from .mail import SendEmailTool
     from .shell import RunCommandTool
-    from .web import BraveSearchTool
+    from .web import BraveSearchTool, FetchUrlTool
 
     return [
         ListFilesTool(state),
@@ -58,5 +58,6 @@ def build_native_tools(state: SessionState, confirm_fn: ConfirmFn) -> list[Tool]
         EditFileTool(state),
         RunCommandTool(state, confirm_fn),
         BraveSearchTool(),
+        FetchUrlTool(),
         SendEmailTool(state, confirm_fn),
     ]

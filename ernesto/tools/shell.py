@@ -8,7 +8,7 @@ import signal
 import subprocess
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from ..config import TOOL_OUTPUT_LIMIT, load_deny_patterns
+from ..config import STDERR_OUTPUT_LIMIT, TOOL_OUTPUT_LIMIT, load_deny_patterns
 from . import ConfirmFn, Tool
 
 if TYPE_CHECKING:
@@ -24,6 +24,29 @@ def find_deny_match(command: str, patterns: list[str]) -> str | None:
         except re.error:
             continue  # pattern malformato in config.yaml: ignorato
     return None
+
+
+def _truncate(text: str, limit: int) -> str:
+    """Tronca a `limit` caratteri aggiungendo la nota di troncamento."""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n…[troncato a {limit} caratteri]"
+
+
+def _format_output(returncode: int, stdout: str, stderr: str) -> str:
+    """Compone il risultato: stdout e stderr troncati separatamente.
+
+    Con stderr vuoto il formato resta `exit N\\n<stdout>` come prima; quando ci sono
+    entrambi gli stream vengono etichettati, cosi' il modello distingue i risultati dal
+    rumore (warning di npm o pip) invece di trovarseli mescolati.
+    """
+    stdout = _truncate(stdout, TOOL_OUTPUT_LIMIT)
+    stderr = _truncate(stderr, STDERR_OUTPUT_LIMIT)
+    if not stderr.strip():
+        return f"exit {returncode}\n{stdout}"
+    if not stdout.strip():
+        return f"exit {returncode}\n--- stderr ---\n{stderr}"
+    return f"exit {returncode}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -90,24 +113,26 @@ class RunCommandTool(Tool):
                 command,
                 shell=True,
                 cwd=str(self._state.workdir),
+                stdin=subprocess.DEVNULL,  # un comando interattivo fallisce subito invece di restare appeso
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=subprocess.PIPE,
                 text=True,
+                # encoding esplicito: con il default (codifica locale, cp1252 su Windows) un
+                # byte non mappato solleva UnicodeDecodeError DENTRO il thread lettore di
+                # communicate(), che non risale al chiamante: l'output spariva lasciando un
+                # ingannevole "exit 0" che il modello interpretava come pagina vuota.
+                encoding="utf-8",
+                errors="replace",
                 **popen_kwargs,
             )
         except OSError as exc:
             return f"ERRORE: {exc}"
         try:
-            output, _ = proc.communicate(timeout=int(timeout))
+            stdout, stderr = proc.communicate(timeout=int(timeout))
         except subprocess.TimeoutExpired:
             _kill_tree(proc)
             return f"ERRORE: timeout dopo {timeout}s"
         except KeyboardInterrupt:
             _kill_tree(proc)
             raise  # risale fino a run_turn, che annulla il turno
-        output = output or ""
-        note = ""
-        if len(output) > TOOL_OUTPUT_LIMIT:
-            output = output[:TOOL_OUTPUT_LIMIT]
-            note = f"\n…[output troncato a {TOOL_OUTPUT_LIMIT} caratteri]"
-        return f"exit {proc.returncode}\n{output}{note}"
+        return _format_output(proc.returncode, stdout or "", stderr or "")

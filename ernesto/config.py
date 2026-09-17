@@ -9,6 +9,7 @@ OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 MAX_AGENT_STEPS = 30
 TOOL_OUTPUT_LIMIT = 8000
+STDERR_OUTPUT_LIMIT = 2000  # stderr ha un tetto piu' basso: e' rumore piu' spesso che segnale
 LOG_CONTENT_LIMIT = 4000
 MAX_LIST_ENTRIES = 500
 MCP_TOOL_TIMEOUT = 60

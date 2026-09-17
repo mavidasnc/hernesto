@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ernesto.config import DEFAULT_DENY_PATTERNS, TOOL_OUTPUT_LIMIT
+from ernesto.config import DEFAULT_DENY_PATTERNS, STDERR_OUTPUT_LIMIT, TOOL_OUTPUT_LIMIT
 from ernesto.session import SessionState
 from ernesto.tools import ConfirmFn
 from ernesto.tools.shell import RunCommandTool, find_deny_match
@@ -20,10 +20,10 @@ def _make_tool(
     return RunCommandTool(state, confirm_fn or (lambda message, preview=None: False))
 
 
-def _proc(stdout: str = "", returncode: int = 0) -> MagicMock:
-    """Processo finto: communicate() restituisce stdout e nessuno stderr separato."""
+def _proc(stdout: str = "", returncode: int = 0, stderr: str = "") -> MagicMock:
+    """Processo finto: communicate() restituisce la coppia (stdout, stderr)."""
     proc = MagicMock()
-    proc.communicate.return_value = (stdout, None)
+    proc.communicate.return_value = (stdout, stderr)
     proc.returncode = returncode
     return proc
 
@@ -36,6 +36,47 @@ def test_output_truncation(mock_popen: MagicMock, state: SessionState) -> None:
     assert result.startswith("exit 0")
     assert "troncato" in result
     assert len(result) < TOOL_OUTPUT_LIMIT + 200
+
+
+def test_output_non_decodificabile(state: SessionState) -> None:
+    """Un byte non decodificabile nella codifica locale non fa sparire l'output.
+
+    Regressione: con text=True senza encoding la decodifica avveniva in cp1252 dentro il
+    thread lettore di communicate(), l'eccezione non risaliva e il tool restituiva
+    "exit 0" con output vuoto.
+    """
+    command = 'python -c "import sys; sys.stdout.buffer.write(bytes([0x41, 0x9d, 0x42]))"'
+    result = _make_tool(state).run(command=command)
+    assert result.startswith("exit 0")
+    assert "A" in result and "B" in result
+    assert "�" in result  # il byte illeggibile diventa il carattere di sostituzione
+
+
+def test_stdin_non_ereditato(state: SessionState) -> None:
+    """Un comando che legge stdin fallisce subito invece di restare appeso al timeout."""
+    result = _make_tool(state).run(command='python -c "input()"', timeout=20)
+    assert not result.startswith("exit 0")
+    assert "EOF" in result
+
+
+@patch("ernesto.tools.shell.subprocess.Popen")
+def test_stdout_e_stderr_separati(mock_popen: MagicMock, state: SessionState) -> None:
+    """Con entrambi gli stream presenti l'output e' etichettato."""
+    mock_popen.return_value = _proc(stdout="risultato", stderr="attenzione")
+    result = _make_tool(state).run(command="npm test")
+    assert "--- stdout ---" in result
+    assert "--- stderr ---" in result
+    assert result.index("risultato") < result.index("attenzione")
+
+
+@patch("ernesto.tools.shell.subprocess.Popen")
+def test_stderr_troncato_separatamente(mock_popen: MagicMock, state: SessionState) -> None:
+    """Uno stderr enorme non mangia lo stdout: i due stream hanno tetti indipendenti."""
+    mock_popen.return_value = _proc(stdout="segnale", stderr="x" * (STDERR_OUTPUT_LIMIT * 5))
+    result = _make_tool(state).run(command="pip install qualcosa")
+    assert "segnale" in result
+    assert "troncato" in result
+    assert len(result) < TOOL_OUTPUT_LIMIT
 
 
 @patch("ernesto.tools.shell.subprocess.Popen")
