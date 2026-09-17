@@ -5,22 +5,23 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
-## [Non rilasciato]
+## [0.4.0] - 2026-09-17
 
 ### Aggiunto
-- **Istruzioni di base installabili**: `context/soul.md`, `context/agent.md` e `context/config.yaml` sono i file canonici versionati; `install-context.py` li copia in `~/.config/ernesto/`, da dove valgono in qualunque cartella di lavoro. Contengono identita', profilo utente, disciplina di codice, regole di memoria e sicurezza, travasate dai file di contesto usati in altri progetti.
-- **Opzione `--prompt`**: esegue un solo turno e termina, senza REPL ne' banner, per cron e script. Con `--prompt` l'avvio non pone domande interattive, altrimenti un'esecuzione non presidiata resterebbe appesa.
-- **Playbook per le attivita' ricorrenti**: file in `playbooks/`, elencati in `agent.md` e letti con `read_file` solo quando servono. Il primo e' `playbooks/rassegna-stampa.md`.
+- **Contesto installabile a livello utente**: i file versionati in `context/` si copiano in `~/.config/ernesto/context/` con `install-context.py`, e da li' valgono in qualunque cartella di lavoro. Contengono identita', profilo utente, disciplina di codice, regole di memoria e di sicurezza, ricavate dai file di contesto usati in altri progetti (materiale di origine e criteri di scelta in `docs/contesto-originale/`).
+- **Cartella `workspace/`**: lo spazio dell'agente per appunti, bozze e output intermedi, con `workspace/projects/<nome>/` come casa dei progetti nuovi. `identity.md` lo dichiara, cosi' "voglio creare un progetto pippo" finisce nel posto giusto.
+- **Opzione `--prompt`**: esegue un solo turno e termina, senza REPL ne' banner, per cron e script. In questa modalita' l'avvio non pone domande interattive, altrimenti un'esecuzione non presidiata resterebbe appesa su una richiesta che nessuno vede.
+- **Playbook per le attivita' ricorrenti**: file in `playbooks/`, elencati in `identity.md` e letti con `read_file` solo quando servono, quindi a costo zero finche' non si usano. Il primo e' `playbooks/rassegna-stampa.md`.
+- **`install-context.py`**: installa il contesto di base e ricrea `workspace/projects/` e `memories/` dopo un clone.
 
 ### Cambiato
-- **Le memorie stanno tutte in `memories/`**: la persistente diventa `memories/memory.md`, accanto a quelle di sessione. Nuova cartella `workspace/` per cio' che l'agente produce, con `workspace/projects/` come casa dei progetti nuovi. Entrambe escluse da git e create da `install-context.py`.
-- **Una sola cartella `context/`**: i file di base versionati e il contesto del progetto vivono insieme. La parte specifica del repository e' delimitata dai marcatori `solo-progetto`, esclusa dalla copia globale e caricata da sola quando si lavora qui, cosi' le regole generali non entrano due volte nel prompt.
-- **Tutti i file letti all'avvio stanno in `context/`**, sia nella cartella di lavoro sia in `~/.config/ernesto/`: `soul.md`, `identity.md`, `credentials.md`, `config.yaml` e `mcp.json`. Nella radice del progetto resta solo `.env`; le memorie restano fuori perche' sono dati prodotti, non configurazione. Prima erano sparsi fra radice e cartella di configurazione, con regole diverse file per file.
-- **`agent.md` si chiama `identity.md`**. I file di base versionati si sono spostati in `context-base/`, cosi' `context/` del repository e' il contesto del progetto ernesto e non ha piu' un doppio ruolo.
+- **Tutti i file letti all'avvio stanno in `context/`**, con la stessa struttura nella cartella di lavoro e in `~/.config/ernesto/`: `soul.md`, `identity.md`, `credentials.md`, `config.yaml` e `mcp.json`. Nella radice resta solo `.env`. Prima erano sparsi fra radice e cartella di configurazione, con una regola diversa per ciascuno.
+- **`agent.md` si chiama `identity.md`** e **si somma invece di sostituire**: prima quello di `~/.config/ernesto/context/`, poi quello del progetto, etichettati separatamente in `/context`. Prima un `agent.md` dentro un progetto faceva sparire tutte le regole generali.
+- **La sezione `solo-progetto` di `identity.md`** e' esclusa dalla copia globale e, quando la cartella di lavoro e' questo repository, viene caricata da sola: senza, le regole generali sarebbero entrate due volte nel prompt (1,5k token di duplicazione misurati).
+- **Le memorie stanno tutte in `memories/`**: la persistente e' `memories/memory.md`, accanto a quelle di sessione. `memories/` e `workspace/` sono escluse da git: sono dati dell'agente, non del progetto.
 - **`/context` mostra il percorso completo di ogni file letto**, compresi quelli non trovati e le memorie, oltre alla stima token di ciascuna parte del system prompt.
-- **`agent.md` si somma invece di sostituire**: prima quello di `~/.config/ernesto/` (regole di base), poi quello del progetto, etichettati separatamente in `/context`. Prima un `agent.md` dentro un progetto faceva sparire tutte le regole generali.
 - **`.env` viene cercato anche in `~/.config/ernesto/`** come fallback dopo quello della cartella di lavoro: senza, lanciare ernesto su un progetto qualsiasi avrebbe richiesto di copiare le chiavi in ogni cartella.
-- Rimosso `soul.md` dalla radice del repository: l'identita' e' una sola e vive in `context/soul.md`, installata nella cartella di configurazione.
+- Radice ripulita: prompt del benchmark e documenti storici in `docs/`, esempi di configurazione in `context/`.
 
 ## [0.3.0] - 2026-09-17
 

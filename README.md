@@ -208,7 +208,7 @@ nell'Utilità di pianificazione. Tre avvertenze:
 - *"Scrivi uno script `stats.py` che calcola media e mediana di una lista e lancialo."*
 - *"Invia una mail di test a me@esempio.com con oggetto 'prova ernesto'."*
 - *"Clona il repo X in una sottocartella e dimmi com'è strutturato."*
-- *"Leggi `agent.md` e dimmi quali comandi di test usa questo progetto."*
+- *"Leggi `context/identity.md` e dimmi quali comandi di test usa questo progetto."*
 
 ## Sviluppo
 

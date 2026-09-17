@@ -15,7 +15,23 @@ python ernesto.py --workdir PATH --model ID --dry-run           # avvio manuale
 Su Linux/macOS sostituire `.venv/Scripts/` con `.venv/bin/`.
 Per provare l'agente a mano senza effetti collaterali usare sempre `--dry-run`
 (write/edit/email/comandi simulati); `--workdir` sposta sia la sandbox sia la cwd dei comandi.
-Dopo ogni modifica al codice: test + lint prima di considerare il lavoro finito.
+
+## Flusso da seguire a ogni modifica del codice
+
+Nessuna modifica è finita finché questi cinque passi non sono completi, nell'ordine:
+
+1. **Test e lint**: `pytest tests/ -q` e `ruff check ernesto/ tests/ ernesto.py`, entrambi
+   verdi. Le modifiche al comportamento portano con sé il loro test.
+2. **Versione**: bump di `__version__` in `ernesto/__init__.py`, secondo il versionamento
+   semantico (patch per le correzioni, minor per funzionalità nuove o cambi di struttura dei
+   file, major per rotture dell'interfaccia).
+3. **CHANGELOG.md**: voce sotto la nuova versione, in italiano, formato Keep a Changelog.
+   Si descrive lo **stato finale**, non i passaggi intermedi: se una scelta è stata rifatta
+   durante il lavoro, la voce racconta solo dove si è arrivati e perché.
+4. **Documentazione**: `README.md` per ciò che cambia per chi usa ernesto, questo file per
+   ciò che serve a chi lavora sul codice. Un comportamento nuovo non documentato non esiste.
+5. **Commit e push**: messaggio in italiano che spiega il *perché* oltre al cosa, poi
+   `git push`.
 
 ## Architettura
 
@@ -46,13 +62,13 @@ esclude dalla copia globale il blocco `solo-progetto` di `identity.md`; quando l
 questo repo, `project_only_section()` carica dal file locale solo quel blocco, evitando di
 ripetere le regole generali. Fuori da `context/` restano `.env`, `memories/` (memoria
 persistente e di sessione) e `workspace/`, entrambe ignorate da git.
-Le memorie (`memory.md` persistente e `memories/memory-<ts>.md` di sessione) non entrano
+Le memorie (`memories/memory.md` persistente e `memories/memory-<ts>.md` di sessione) non entrano
 mai nel prompt: `memory_index()` ne elenca nome, dimensione e prima riga, e il modello
 legge il contenuto con `read_file` solo quando serve. `refresh_system_prompt()` ricalcola
 l'indice una volta per turno nel REPL, mai dentro il ciclo di step, che distruggerebbe il
 prompt caching del provider.
 
-Le preferenze utente stanno in `config.yaml` (workdir, poi `~/.config/ernesto/`), letto da
+Le preferenze utente stanno in `context/config.yaml` (workdir, poi `~/.config/ernesto/`), letto da
 `load_user_config()`/`config_section()` in `ernesto/config.py`: modello iniziale, modello
 per i riassunti della compattazione, denylist aggiuntiva. È l'unico punto da estendere per
 una nuova preferenza. `soul.md` con frontmatter
@@ -61,7 +77,7 @@ una nuova preferenza. `soul.md` con frontmatter
 Gli strumenti stanno in `ernesto/tools/`: la classe base `Tool` e la factory
 `build_native_tools(state, confirm_fn)` sono in `tools/__init__.py`, unico punto in cui
 la lista attiva viene decisa. `tool_schemas()` converte i tool negli schema OpenAI.
-Gli strumenti MCP (opzionali, `ernesto/mcp_client.py`, config `mcp.json`) si aggiungono
+Gli strumenti MCP (opzionali, `ernesto/mcp_client.py`, config `context/mcp.json`) si aggiungono
 alla stessa lista con nome `mcp__<server>__<tool>`; se la libreria `mcp` o un server
 mancano, la sessione parte lo stesso con un avviso.
 
@@ -114,8 +130,11 @@ Ogni cambiamento rilevante va annotato in `CHANGELOG.md` (Keep a Changelog, in i
 
 ## Cosa non è codice applicativo
 
-- `soul.md`, `agent.md`, `credentials.md`: input **runtime di ernesto**, non istruzioni
-  per Claude Code. Modificarli cambia il comportamento dell'agente, non il tuo.
-- `docs/`, `ernesto-esN-prompt.md`, `esN/`: benchmark a 5 esercizi
-  (fixture → prompt → verifica → scorecard), vedi `docs/ernesto-benchmark-README.md`.
-- `logs/`, `saves/`: output di sessione, ignorati da git.
+- `context/soul.md`, `context/identity.md`, `context/credentials.md`: input **runtime di
+  ernesto**, non istruzioni per Claude Code. Modificarli cambia il comportamento
+  dell'agente, non il tuo.
+- `docs/`: benchmark a 5 esercizi (fixture → prompt → verifica → scorecard, vedi
+  `docs/ernesto-benchmark-README.md`) e materiale storico, compreso `docs/contesto-originale/`.
+- `playbooks/`: procedure per l'agente, lette su sua iniziativa.
+- `logs/`, `saves/`, `memories/`, `workspace/`: output di sessione e dati dell'agente,
+  ignorati da git.
