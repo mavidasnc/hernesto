@@ -73,8 +73,9 @@ connessione, non si tocca nulla del computer ospite.
 
 Il bundle si costruisce su Windows a 64 bit, perché i pacchetti compilati vengono scelti
 per l'interprete che li installa, e va ricostruito quando cambiano le dipendenze o i
-sorgenti. Non contiene `.env` né `context/credentials.md`: le chiavi API vanno messe sul
-computer di destinazione, non spedite dentro l'archivio.
+sorgenti. L'unico file che resta fuori è `.env`: le chiavi API vanno messe sul computer di
+destinazione, non spedite dentro l'archivio. `context/credentials.md` invece viaggia con il
+bundle, perché dichiara quali variabili servono e dove ottenerle senza contenerne i valori.
 
 Opzioni (`python ernesto.py --help` per l'elenco completo):
 

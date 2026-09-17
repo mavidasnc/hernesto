@@ -9,8 +9,10 @@ le dipendenze compilate arrivano come wheel scelti per l'interprete che li insta
     python build_bundle.py --no-zip        # solo la cartella
     python build_bundle.py --dest altrove  # cartella di destinazione diversa
 
-Segreti esclusi: `.env` e `context/credentials.md` non entrano mai nel bundle, che
-nasce per essere copiato su un altro computer.
+Segreti esclusi: `.env` non entra mai nel bundle, che nasce per essere copiato su un
+altro computer. `context/credentials.md` invece si', perche' dichiara quali variabili
+servono e dove ottenerle senza contenerne i valori: sull'altra macchina e' cio' che spiega
+come configurare le chiavi.
 """
 
 from __future__ import annotations
@@ -45,9 +47,9 @@ SOURCES = (
     "LICENSE",
 )
 
-# File che non devono uscire dal computer su cui il bundle viene costruito, piu'
+# L'unico file che non deve uscire dal computer su cui il bundle viene costruito, piu'
 # le cartelle rigenerate da Python.
-EXCLUDED = frozenset({".env", "credentials.md", "__pycache__", ".pytest_cache", ".ruff_cache"})
+EXCLUDED = frozenset({".env", "__pycache__", ".pytest_cache", ".ruff_cache"})
 
 # Il launcher del bundle e' piu' corto di quello del repository: qui il runtime
 # c'e' per definizione, non serve il ramo che ricostruisce un virtualenv.

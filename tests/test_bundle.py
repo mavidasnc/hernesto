@@ -30,9 +30,9 @@ def test_pth_conserva_la_libreria_standard() -> None:
 
 
 def test_i_segreti_non_entrano_nel_bundle() -> None:
-    """Il bundle nasce per essere copiato altrove: le credenziali restano qui."""
+    """Il bundle nasce per essere copiato altrove: i valori delle chiavi restano qui."""
     scartati = ignored("qualsiasi", [".env", "credentials.md", "soul.md", "identity.md"])
-    assert scartati == {".env", "credentials.md"}
+    assert scartati == {".env"}
 
 
 def test_le_cartelle_generate_non_entrano_nel_bundle() -> None:
@@ -44,3 +44,9 @@ def test_sorgenti_senza_dati_di_sessione() -> None:
     """Log, memorie, salvataggi e test non fanno parte di cio' che si distribuisce."""
     assert not {"logs", "memories", "saves", "workspace", "tests", ".venv"} & set(SOURCES)
     assert ".env" in EXCLUDED
+
+
+def test_credentials_md_entra_nel_bundle() -> None:
+    """Dichiara le variabili senza contenerne i valori: sull'altra macchina serve."""
+    assert "credentials.md" not in EXCLUDED
+    assert "context" in SOURCES

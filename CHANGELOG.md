@@ -5,6 +5,11 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.7.1] - 2026-09-17
+
+### Cambiato
+- **`context/credentials.md` entra nel bundle**: dichiara quali variabili d'ambiente servono, a cosa, dove ottenerle e con quali limiti, ma non ne contiene i valori, che vivono nell'ambiente o in `.env`. Sul computer di destinazione e' proprio il file che spiega come configurare le chiavi, quindi tenerlo fuori toglieva istruzioni senza proteggere nulla. Fuori dal bundle resta il solo `.env`.
+
 ## [0.7.0] - 2026-09-17
 
 ### Aggiunto
