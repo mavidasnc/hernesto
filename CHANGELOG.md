@@ -5,6 +5,18 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [Non rilasciato]
+
+### Aggiunto
+- **Istruzioni di base installabili**: `context/soul.md`, `context/agent.md` e `context/config.yaml` sono i file canonici versionati; `install-context.py` li copia in `~/.config/ernesto/`, da dove valgono in qualunque cartella di lavoro. Contengono identita', profilo utente, disciplina di codice, regole di memoria e sicurezza, travasate dai file di contesto usati in altri progetti.
+- **Opzione `--prompt`**: esegue un solo turno e termina, senza REPL ne' banner, per cron e script. Con `--prompt` l'avvio non pone domande interattive, altrimenti un'esecuzione non presidiata resterebbe appesa.
+- **Playbook per le attivita' ricorrenti**: file in `playbooks/`, elencati in `agent.md` e letti con `read_file` solo quando servono. Il primo e' `playbooks/rassegna-stampa.md`.
+
+### Cambiato
+- **`agent.md` si somma invece di sostituire**: prima quello di `~/.config/ernesto/` (regole di base), poi quello del progetto, etichettati separatamente in `/context`. Prima un `agent.md` dentro un progetto faceva sparire tutte le regole generali.
+- **`.env` viene cercato anche in `~/.config/ernesto/`** come fallback dopo quello della cartella di lavoro: senza, lanciare ernesto su un progetto qualsiasi avrebbe richiesto di copiare le chiavi in ogni cartella.
+- Rimosso `soul.md` dalla radice del repository: l'identita' e' una sola e vive in `context/soul.md`, installata nella cartella di configurazione.
+
 ## [0.3.0] - 2026-09-17
 
 ### Aggiunto

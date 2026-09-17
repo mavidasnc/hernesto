@@ -38,6 +38,10 @@ conoscono la workdir della sandbox e i flag di sicurezza. Non esiste stato globa
 Il system prompt è composto da `ernesto/context.py` (`load_context` →
 `compose_system_prompt`): prompt di base + `soul.md` + `agent.md` + `credentials.md`,
 cercati prima nella workdir e poi in `~/.config/ernesto/`, più l'**indice delle memorie**.
+`agent.md` è l'unico file che si somma invece di essere sostituito (`agent_base` dalla
+config dir più quello del progetto): serve perché le regole di base valgano anche quando si
+lavora dentro un progetto che ha già il suo `agent.md`. I file di base versionati stanno in
+`context/` e si installano con `install-context.py`.
 Le memorie (`memory.md` persistente e `memories/memory-<ts>.md` di sessione) non entrano
 mai nel prompt: `memory_index()` ne elenca nome, dimensione e prima riga, e il modello
 legge il contenuto con `read_file` solo quando serve. `refresh_system_prompt()` ricalcola

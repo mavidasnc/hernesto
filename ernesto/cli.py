@@ -23,6 +23,7 @@ from .config import (
     COMPACT_THRESHOLD_TOKENS,
     MEMORY_DIR,
     OPENROUTER_BASE,
+    config_dir,
     config_section,
     load_env_file,
 )
@@ -530,20 +531,29 @@ def main(
     dry_run: bool = typer.Option(False, "--dry-run", help="Simula le azioni (write/edit/send/run) senza eseguirle."),
     reasoning: str = typer.Option("medium", "--reasoning", help="Livello di reasoning: low|medium|high|xhigh."),
     no_mcp: bool = typer.Option(False, "--no-mcp", help="Disabilita gli strumenti MCP."),
+    prompt: str | None = typer.Option(
+        None, "--prompt", help="Esegue un solo turno con questo messaggio e termina (per cron e script)."
+    ),
 ) -> None:
     """ernesto — agente da terminale con strumenti, basato su OpenRouter."""
     _configure_console()
     workdir = (workdir or Path.cwd()).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
 
-    # .env come fallback: popola os.environ solo per le chiavi non gia' presenti
+    # .env come fallback: popola os.environ solo per le chiavi non gia' presenti, quindi
+    # quello del progetto vince su quello globale. Senza il secondo, lanciare ernesto su un
+    # progetto qualsiasi richiederebbe di copiare le chiavi in ogni cartella.
     load_env_file(workdir / ".env")
+    load_env_file(config_dir() / ".env")
 
     # Stesso timestamp per log e memoria di sessione: si ritrovano a coppie
     session_stamp = f"{datetime.now():%Y%m%d_%H%M%S}"
     session_memory = f"{MEMORY_DIR}/memory-{session_stamp}.md"
     ctx = load_context(workdir, session_memory)
-    _maybe_offer_credentials_template(workdir, ctx)
+    # Con --prompt la sessione non e' presidiata: nessuna domanda interattiva all'avvio,
+    # altrimenti un'esecuzione da cron resterebbe appesa su una richiesta che nessuno vede.
+    if not prompt:
+        _maybe_offer_credentials_template(workdir, ctx)
 
     env_vars = extract_env_vars(ctx.credentials.content or "")
     check = verify_env_vars(env_vars)
@@ -628,6 +638,23 @@ def main(
         )
     if state.dry_run:
         startup_warnings.append("DRY-RUN attivo — write/edit/send/run saranno solo simulati.")
+
+    # Modalita' non presidiata: un turno solo, niente banner ne' schermo pulito, cosi'
+    # l'output del processo contiene la risposta e nient'altro.
+    if prompt:
+        for warning in startup_warnings:
+            print(warning)
+        state.messages.append({"role": "user", "content": prompt})
+        logger.log("user", content=prompt)
+        try:
+            run_turn(state, client, tools)
+        except KeyboardInterrupt:
+            print("\n[Interrotto] turno annullato dall'utente (Ctrl+C).")
+        print(
+            f"[{state.total_prompt_tokens} tok in / {state.total_completion_tokens} out "
+            f"· {fmt_cost(state.total_cost)} · log {logger.path}]"
+        )
+        return
 
     _clear_screen()
     _print_banner(state, logger)

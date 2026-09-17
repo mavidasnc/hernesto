@@ -192,3 +192,42 @@ def test_reload_memory_rileva_i_cambiamenti(workdir: Path) -> None:
     (workdir / "memory.md").write_text("un fatto completamente diverso", encoding="utf-8")
     assert reload_memory(ctx) is True
     assert "memory.md" in ctx.memory_index
+
+
+# ---------------------------------------------------------------------------
+# fusione di agent.md
+# ---------------------------------------------------------------------------
+
+
+def test_agent_base_e_progetto_si_sommano(
+    workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Le istruzioni di base non spariscono quando il progetto ha il suo agent.md."""
+    fake_config = tmp_path / "config-home"
+    fake_config.mkdir()
+    (fake_config / "agent.md").write_text("Regola generale: rispondi in italiano.", encoding="utf-8")
+    (workdir / "agent.md").write_text("Regola di progetto: usa pytest.", encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    prompt = compose_system_prompt(load_context(workdir))
+    assert "Regola generale" in prompt
+    assert "Regola di progetto" in prompt
+    # prima le regole di base, poi quelle del progetto, che possono specializzarle
+    assert prompt.index("Regola generale") < prompt.index("Regola di progetto")
+
+
+def test_agent_solo_di_base(workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Senza agent.md nel progetto valgono comunque le istruzioni di base."""
+    fake_config = tmp_path / "config-home"
+    fake_config.mkdir()
+    (fake_config / "agent.md").write_text("Regola generale.", encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    assert "Regola generale." in compose_system_prompt(load_context(workdir))
+
+
+def test_agent_non_duplicato_se_workdir_e_config_coincidono(
+    workdir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lanciando ernesto dentro ~/.config/ernesto il file non viene contato due volte."""
+    (workdir / "agent.md").write_text("Regola unica.", encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: workdir)
+    assert compose_system_prompt(load_context(workdir)).count("Regola unica.") == 1

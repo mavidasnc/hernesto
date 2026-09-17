@@ -46,16 +46,31 @@ Opzioni (`python ernesto.py --help` per l'elenco completo):
 | `--dry-run` | Simula write/edit/email/comandi senza toccare nulla |
 | `--reasoning low\|medium\|high\|xhigh` | Livello di reasoning (default `medium`) |
 | `--no-mcp` | Disabilita l'integrazione MCP |
+| `--prompt "testo"` | Esegue un solo turno e termina, senza REPL (per cron e script) |
 
 ## Configurazione: i file di contesto
 
 All'avvio ernesto legge dalla cartella di lavoro (fallback `~/.config/ernesto/`)
 i file markdown che definiscono identità, istruzioni, memoria e credenziali del progetto:
 
+Le istruzioni di base (identità, profilo utente, disciplina di codice) stanno in
+`context/` nel repository e si installano una volta sola con:
+
+```bash
+python install-context.py
+```
+
+Lo script le copia in `~/.config/ernesto/`, da dove valgono in **qualunque** cartella di
+lavoro: così ernesto funziona sui progetti reali senza copiarvi dentro nulla. Nella stessa
+cartella conviene tenere un `.env` con le chiavi, letto come fallback quando il progetto non
+ne ha uno.
+
 - **`soul.md`** — personalità e tono dell'assistente. Preposto al system prompt;
   con una riga frontmatter `mode: replace` lo sostituisce del tutto.
-- **`agent.md`** — istruzioni operative del progetto (convenzioni, comandi di
-  test/lint, vincoli). Aggiunto al system prompt dopo `soul.md`.
+- **`agent.md`** — istruzioni operative. È l'unico file che **si somma**: prima quello di
+  `~/.config/ernesto/` (regole di base valide ovunque), poi quello del progetto
+  (convenzioni, comandi di test e lint, vincoli specifici). Un `agent.md` nel progetto non
+  cancella più le regole generali.
 - **`credentials.md`** — dichiara quali variabili d'ambiente servono, a cosa
   servono e come ottenerle. **Non contiene valori reali**: le chiavi stanno
   nelle variabili d'ambiente (o in un `.env` locale, caricato come fallback e
@@ -127,6 +142,17 @@ Copia `config.yaml.example` in `config.yaml` nella cartella di lavoro (o in
 `~/.config/ernesto/`) per impostare il modello iniziale, il modello usato per i riassunti
 della compattazione e i pattern pericolosi aggiuntivi. Vince il primo file trovato; tutte
 le chiavi sono opzionali e un file malformato viene ignorato senza bloccare l'avvio.
+
+## Uso non presidiato
+
+Con `--prompt "testo"` ernesto esegue un solo turno e termina, quindi può stare in cron o
+nell'Utilità di pianificazione. Tre avvertenze:
+
+- senza terminale interattivo **ogni conferma viene rifiutata**, quindi un task che tocca
+  file o invia email si blocca: serve `--yolo`, e con `--yolo` la denylist non protegge più;
+- vanno bene i compiti che leggono e riferiscono (rassegne stampa, controlli, riepiloghi),
+  molto meno quelli che modificano progetti reali senza nessuno che guardi;
+- prova sempre la riga di comando con `--dry-run` prima di metterla in pianificazione.
 
 ## Policy di sicurezza
 

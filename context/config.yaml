@@ -1,0 +1,22 @@
+# config.yaml di base per ernesto — installato in ~/.config/ernesto/
+# Vale per ogni cartella di lavoro che non abbia un config.yaml proprio.
+
+model:
+  default: qwen/qwen3.8-27b
+  json_mode: false
+
+compact:
+  summary_model: google/gemini-2.5-flash
+  llm_summary: false
+
+safety:
+  # Si sommano ai pattern di default (rm distruttivo, sudo, git push, git reset --hard,
+  # docker system prune). Qui i comandi che fanno danni sui progetti reali.
+  deny_patterns:
+    - "npm\s+publish"
+    - "wp\s+db\s+(reset|drop)"
+    - "drop\s+database"
+    - "git\s+clean\s+-[a-z]*f"
+    - "\bshutdown\b"
+    - "\bformat\b\s+[a-z]:"
+    - "composer\s+.*--no-dev.*install"

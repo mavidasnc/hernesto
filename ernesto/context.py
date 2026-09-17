@@ -66,6 +66,10 @@ class Context:
     workdir: Path
     soul: ContextFile = field(default_factory=lambda: ContextFile("soul.md"))
     agent: ContextFile = field(default_factory=lambda: ContextFile("agent.md"))
+    # Istruzioni di base da ~/.config/ernesto/agent.md: si SOMMANO a quelle del progetto
+    # invece di essere sostituite, altrimenti aprire un progetto con un suo agent.md
+    # farebbe sparire le regole generali.
+    agent_base: ContextFile = field(default_factory=lambda: ContextFile("agent.md"))
     credentials: ContextFile = field(default_factory=lambda: ContextFile("credentials.md"))
     soul_mode: str = "append"  # "append" | "replace"
     # Le memorie non sono file di contesto caricati: nel prompt entra solo il loro indice.
@@ -73,20 +77,28 @@ class Context:
     session_memory: str | None = None  # es. "memories/memory-20260917_094311.md"
 
 
-def _find_file(name: str, workdir: Path, workdir_only: bool = False) -> ContextFile:
-    """Cerca un file di contesto nella workdir poi in ~/.config/ernesto/.
+def _read_file(name: str, base: Path, origin: str) -> ContextFile:
+    """Legge un file di contesto da una cartella precisa (assente o illeggibile = vuoto)."""
+    candidate = base / name
+    if candidate.is_file():
+        try:
+            return ContextFile(name, candidate, candidate.read_text(encoding="utf-8"), origin)
+        except OSError:
+            pass
+    return ContextFile(name)
 
-    Con workdir_only la ricerca si ferma alla cartella di lavoro: e' il caso di memory.md,
-    che e' per progetto e non deve rientrare da ~/.config in ogni altro progetto.
+
+def _find_file(name: str, workdir: Path, workdir_only: bool = False) -> ContextFile:
+    """Cerca un file di contesto nella workdir poi in ~/.config/ernesto/: vince il primo.
+
+    Con workdir_only la ricerca si ferma alla cartella di lavoro: e' il caso delle memorie,
+    che sono per progetto e non devono rientrare da ~/.config in ogni altro progetto.
     """
     bases = ((workdir, "workdir"),) if workdir_only else ((workdir, "workdir"), (config_dir(), "config"))
     for base, origin in bases:
-        candidate = base / name
-        if candidate.is_file():
-            try:
-                return ContextFile(name, candidate, candidate.read_text(encoding="utf-8"), origin)
-            except OSError:
-                return ContextFile(name)
+        found = _read_file(name, base, origin)
+        if found.content is not None:
+            return found
     return ContextFile(name)
 
 
@@ -124,7 +136,12 @@ def load_context(workdir: Path, session_memory: str | None = None) -> Context:
     """
     ctx = Context(workdir=workdir)
     ctx.soul = _find_file("soul.md", workdir)
-    ctx.agent = _find_file("agent.md", workdir)
+    # agent.md e' l'unico file che si somma: le istruzioni di base valgono ovunque, quelle
+    # del progetto si aggiungono. Se workdir e config dir coincidono, si carica una volta.
+    ctx.agent_base = _read_file("agent.md", config_dir(), "config")
+    ctx.agent = _read_file("agent.md", workdir, "workdir")
+    if ctx.agent.path is not None and ctx.agent.path == ctx.agent_base.path:
+        ctx.agent_base = ContextFile("agent.md")
     ctx.credentials = _find_file("credentials.md", workdir)
     ctx.session_memory = session_memory
     ctx.memory_index = memory_index(workdir, session_memory)
@@ -211,10 +228,9 @@ def summary_line(ctx: Context) -> str:
         return f"{cf.name} {'✓' if cf.content is not None else '✗'}"
 
     memorie = len(memory_files(ctx.workdir))
-    return (
-        f"Contesto: {mark(ctx.soul)} · {mark(ctx.agent)} · {mark(ctx.credentials)} · "
-        f"memorie: {memorie}"
-    )
+    agent = "agent.md " + ("✓✓" if ctx.agent.content and ctx.agent_base.content else
+                           "✓" if ctx.agent.content or ctx.agent_base.content else "✗")
+    return f"Contesto: {mark(ctx.soul)} · {agent} · {mark(ctx.credentials)} · memorie: {memorie}"
 
 
 def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str, str]]:
@@ -227,6 +243,9 @@ def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str
         if ctx.soul.content:
             parts.append((f"soul.md ({ctx.soul.path or ctx.soul.name})", ctx.soul.content))
         parts.append(("prompt di default", f"{BASE_SYSTEM_PROMPT}\n\n{AGENT_SYSTEM_PROMPT}"))
+    if ctx.agent_base.content:
+        parts.append((f"agent.md base ({ctx.agent_base.path or ctx.agent_base.name})",
+                      f"## Istruzioni operative di base\n\n{ctx.agent_base.content}"))
     if ctx.agent.content:
         parts.append((f"agent.md ({ctx.agent.path or ctx.agent.name})",
                       f"## Istruzioni operative del progetto\n\n{ctx.agent.content}"))
