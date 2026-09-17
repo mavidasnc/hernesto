@@ -1,4 +1,4 @@
-"""Integrazione opzionale con server MCP (stdio) configurati in mcp.json.
+"""Integrazione opzionale con server MCP (stdio) configurati in context/mcp.json.
 
 Se la libreria `mcp` non e' installata o un server non parte, il caricamento
 produce un avviso non fatale e la sessione continua senza quegli strumenti.
@@ -13,15 +13,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .config import MCP_TOOL_TIMEOUT, TOOL_OUTPUT_LIMIT, config_dir
+from .config import CONTEXT_DIR, MCP_TOOL_TIMEOUT, TOOL_OUTPUT_LIMIT, config_dir
 from .tools import Tool
 
 _MCP_LIST_TIMEOUT = 30
 
 
 def find_mcp_config(workdir: Path) -> Path | None:
-    """Cerca mcp.json nella workdir poi in ~/.config/ernesto/."""
-    for candidate in (workdir / "mcp.json", config_dir() / "mcp.json"):
+    """Cerca context/mcp.json nella workdir poi in ~/.config/ernesto/."""
+    for candidate in (workdir / CONTEXT_DIR / "mcp.json", config_dir() / CONTEXT_DIR / "mcp.json"):
         if candidate.is_file():
             return candidate
     return None

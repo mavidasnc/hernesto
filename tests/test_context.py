@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ernesto.config import MEMORY_DIR
+from ernesto.config import CONTEXT_DIR, MEMORY_DIR
 from ernesto.context import (
     AGENT_SYSTEM_PROMPT,
     compose_system_prompt,
@@ -35,24 +35,31 @@ CREDENTIALS_SAMPLE = """# Credenziali — progetto demo
 """
 
 
+def _ctx(base: Path) -> Path:
+    """La sottocartella context/ di una base, creata al volo per i test."""
+    d = base / CONTEXT_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def test_no_context_files(workdir: Path) -> None:
     """In una cartella vuota i file risultano assenti e l'avvio prosegue."""
     ctx = load_context(workdir)
     assert ctx.soul.content is None
-    assert ctx.agent.content is None
+    assert ctx.identity.content is None
     assert ctx.credentials.content is None
-    assert summary_line(ctx) == "Contesto: soul.md ✗ · agent.md ✗ · credentials.md ✗ · memorie: 0"
+    assert summary_line(ctx) == "Contesto: soul.md ✗ · identity.md ✗ · credentials.md ✗ · memorie: 0"
     # Il system prompt di default resta composto comunque
     assert AGENT_SYSTEM_PROMPT in compose_system_prompt(ctx)
 
 
 def test_context_files_present(workdir: Path) -> None:
     """I tre file presenti in workdir vengono caricati e riepilogati."""
-    (workdir / "soul.md").write_text("Sei allegro.", encoding="utf-8")
-    (workdir / "agent.md").write_text("Usa sempre pytest.", encoding="utf-8")
-    (workdir / "credentials.md").write_text(CREDENTIALS_SAMPLE, encoding="utf-8")
+    (_ctx(workdir) / "soul.md").write_text("Sei allegro.", encoding="utf-8")
+    (_ctx(workdir) / "identity.md").write_text("Usa sempre pytest.", encoding="utf-8")
+    (_ctx(workdir) / "credentials.md").write_text(CREDENTIALS_SAMPLE, encoding="utf-8")
     ctx = load_context(workdir)
-    assert summary_line(ctx) == "Contesto: soul.md ✓ · agent.md ✓ · credentials.md ✓ · memorie: 0"
+    assert summary_line(ctx) == "Contesto: soul.md ✓ · identity.md ✓ · credentials.md ✓ · memorie: 0"
     prompt = compose_system_prompt(ctx)
     assert "Sei allegro." in prompt
     assert "## Istruzioni operative del progetto" in prompt
@@ -62,7 +69,7 @@ def test_context_files_present(workdir: Path) -> None:
 
 def test_soul_mode_append(workdir: Path) -> None:
     """Mode append (default): soul.md e' preposto al prompt di default."""
-    (workdir / "soul.md").write_text("Sei allegro.", encoding="utf-8")
+    (_ctx(workdir) / "soul.md").write_text("Sei allegro.", encoding="utf-8")
     ctx = load_context(workdir)
     assert ctx.soul_mode == "append"
     prompt = compose_system_prompt(ctx)
@@ -73,7 +80,7 @@ def test_soul_mode_append(workdir: Path) -> None:
 
 def test_soul_mode_replace(workdir: Path) -> None:
     """Mode replace: soul.md sostituisce del tutto il prompt di default."""
-    (workdir / "soul.md").write_text("---\nmode: replace\n---\nSolo questo.", encoding="utf-8")
+    (_ctx(workdir) / "soul.md").write_text("---\nmode: replace\n---\nSolo questo.", encoding="utf-8")
     ctx = load_context(workdir)
     assert ctx.soul_mode == "replace"
     prompt = compose_system_prompt(ctx)
@@ -195,18 +202,18 @@ def test_reload_memory_rileva_i_cambiamenti(workdir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# fusione di agent.md
+# fusione di identity.md
 # ---------------------------------------------------------------------------
 
 
-def test_agent_base_e_progetto_si_sommano(
+def test_identity_base_e_progetto_si_sommano(
     workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Le istruzioni di base non spariscono quando il progetto ha il suo agent.md."""
     fake_config = tmp_path / "config-home"
     fake_config.mkdir()
-    (fake_config / "agent.md").write_text("Regola generale: rispondi in italiano.", encoding="utf-8")
-    (workdir / "agent.md").write_text("Regola di progetto: usa pytest.", encoding="utf-8")
+    (_ctx(fake_config) / "identity.md").write_text("Regola generale: rispondi in italiano.", encoding="utf-8")
+    (_ctx(workdir) / "identity.md").write_text("Regola di progetto: usa pytest.", encoding="utf-8")
     monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
     prompt = compose_system_prompt(load_context(workdir))
     assert "Regola generale" in prompt
@@ -215,19 +222,19 @@ def test_agent_base_e_progetto_si_sommano(
     assert prompt.index("Regola generale") < prompt.index("Regola di progetto")
 
 
-def test_agent_solo_di_base(workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_identity_solo_di_base(workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Senza agent.md nel progetto valgono comunque le istruzioni di base."""
     fake_config = tmp_path / "config-home"
     fake_config.mkdir()
-    (fake_config / "agent.md").write_text("Regola generale.", encoding="utf-8")
+    (_ctx(fake_config) / "identity.md").write_text("Regola generale.", encoding="utf-8")
     monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
     assert "Regola generale." in compose_system_prompt(load_context(workdir))
 
 
-def test_agent_non_duplicato_se_workdir_e_config_coincidono(
+def test_identity_non_duplicata_se_workdir_e_config_coincidono(
     workdir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Lanciando ernesto dentro ~/.config/ernesto il file non viene contato due volte."""
-    (workdir / "agent.md").write_text("Regola unica.", encoding="utf-8")
+    (_ctx(workdir) / "identity.md").write_text("Regola unica.", encoding="utf-8")
     monkeypatch.setattr("ernesto.context.config_dir", lambda: workdir)
     assert compose_system_prompt(load_context(workdir)).count("Regola unica.") == 1

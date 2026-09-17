@@ -33,6 +33,11 @@ COMPACT_SUMMARY_MAX_CHARS = 6000  # quanto contenuto si manda al riassuntore
 MEMORY_INDEX_LIMIT = 10
 MEMORY_DIR = "memories"
 
+# Tutti i file letti all'avvio stanno in questa sottocartella, sia nella cartella di lavoro
+# sia in ~/.config/ernesto/: una sola regola da ricordare, nessun file di configurazione
+# sparso nella radice del progetto (l'unica eccezione e' .env).
+CONTEXT_DIR = "context"
+
 # Pattern pericolosi di default per run_command (regex): richiedono conferma.
 # Il comando viene normalizzato prima del confronto (minuscole, spazi collassati) e il match
 # e' case-insensitive, cosi' "RM  -RF" e "rm -r -f" non scivolano via.
@@ -82,7 +87,7 @@ _user_config_cache: dict[str, Any] = {}
 
 
 def load_user_config(workdir: Path, refresh: bool = False) -> dict[str, Any]:
-    """Legge config.yaml (workdir, poi ~/.config/ernesto/) e lo restituisce come dizionario.
+    """Legge context/config.yaml (workdir, poi ~/.config/ernesto/) come dizionario.
 
     Vince il primo file trovato: i due non vengono fusi. Un file assente, PyYAML non
     installato o uno YAML malformato producono un dizionario vuoto, mai un errore: la
@@ -92,9 +97,9 @@ def load_user_config(workdir: Path, refresh: bool = False) -> dict[str, Any]:
     if not refresh and key in _user_config_cache:
         return _user_config_cache[key]
     data: dict[str, Any] = {}
-    cfg = workdir / "config.yaml"
+    cfg = workdir / CONTEXT_DIR / "config.yaml"
     if not cfg.is_file():
-        cfg = config_dir() / "config.yaml"
+        cfg = config_dir() / CONTEXT_DIR / "config.yaml"
     if cfg.is_file():
         try:
             import yaml  # type: ignore[import-untyped]

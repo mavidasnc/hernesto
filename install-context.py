@@ -1,8 +1,10 @@
 """Installa i file di contesto di base in ~/.config/ernesto/.
 
-I file canonici e versionati stanno in `context/`: da li' vengono copiati nella cartella di
-configurazione, dove ernesto li trova qualunque sia la cartella di lavoro. Cosi' le regole
-di base valgono anche sui progetti reali senza copiarle dentro ogni repository.
+I file canonici e versionati stanno in `context-base/`: da li' vengono copiati in
+`~/.config/ernesto/context/`, dove ernesto li trova qualunque sia la cartella di lavoro.
+Cosi' le regole di base valgono anche sui progetti reali senza copiarle dentro ogni
+repository. La cartella `context/` del repository e' un'altra cosa: e' il contesto del
+progetto ernesto, letto solo quando si lavora qui dentro.
 
     python install-context.py            # copia, chiedendo prima di sovrascrivere
     python install-context.py --force    # sovrascrive senza chiedere
@@ -16,13 +18,13 @@ import shutil
 import sys
 from pathlib import Path
 
-SOURCE = Path(__file__).parent / "context"
-FILES = ("soul.md", "agent.md", "config.yaml")
+SOURCE = Path(__file__).parent / "context-base"
+FILES = ("soul.md", "identity.md", "config.yaml")
 
 
 def config_dir() -> Path:
-    """La stessa cartella che cerca ernesto (vedi ernesto/config.py)."""
-    return Path.home() / ".config" / "ernesto"
+    """La stessa cartella che cerca ernesto (vedi ernesto/config.py e CONTEXT_DIR)."""
+    return Path.home() / ".config" / "ernesto" / "context"
 
 
 def main() -> int:
@@ -58,7 +60,7 @@ def main() -> int:
 
     if not args.diff:
         print(f"\nFatto. Da ora le istruzioni di base valgono in ogni cartella di lavoro ({target}).")
-        print("Un agent.md dentro un progetto si somma a queste, non le sostituisce.")
+        print("Un identity.md dentro un progetto si somma a queste, non le sostituisce.")
     return 0
 
 

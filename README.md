@@ -50,27 +50,44 @@ Opzioni (`python ernesto.py --help` per l'elenco completo):
 
 ## Configurazione: i file di contesto
 
-All'avvio ernesto legge dalla cartella di lavoro (fallback `~/.config/ernesto/`)
-i file markdown che definiscono identità, istruzioni, memoria e credenziali del progetto:
+**Tutti i file letti all'avvio stanno in una sottocartella `context/`**, cercata prima nella
+cartella di lavoro e poi in `~/.config/ernesto/`. La struttura è identica nei due posti:
+
+```
+<cartella di lavoro>/context/     oppure     ~/.config/ernesto/context/
+    soul.md
+    identity.md
+    credentials.md
+    config.yaml
+    mcp.json
+```
+
+L'unica eccezione è `.env`, che resta nella radice della cartella di lavoro (e, come
+fallback globale, in `~/.config/ernesto/.env`). Anche le memorie restano fuori da
+`context/`, perché sono dati prodotti dall'agente e non configurazione: `memory.md` nella
+radice e `memories/` accanto.
+
+`/context` mostra il percorso completo di ogni file effettivamente letto, compresi quelli
+non trovati.
 
 Le istruzioni di base (identità, profilo utente, disciplina di codice) stanno in
-`context/` nel repository e si installano una volta sola con:
+`context-base/` nel repository e si installano una volta sola con:
 
 ```bash
 python install-context.py
 ```
 
-Lo script le copia in `~/.config/ernesto/`, da dove valgono in **qualunque** cartella di
-lavoro: così ernesto funziona sui progetti reali senza copiarvi dentro nulla. Nella stessa
-cartella conviene tenere un `.env` con le chiavi, letto come fallback quando il progetto non
-ne ha uno.
+Lo script le copia in `~/.config/ernesto/context/`, da dove valgono in **qualunque**
+cartella di lavoro: così ernesto funziona sui progetti reali senza copiarvi dentro nulla. In
+`~/.config/ernesto/.env` conviene tenere le chiavi, lette come fallback quando il progetto
+non ne ha uno.
 
 - **`soul.md`** — personalità e tono dell'assistente. Preposto al system prompt;
   con una riga frontmatter `mode: replace` lo sostituisce del tutto.
-- **`agent.md`** — istruzioni operative. È l'unico file che **si somma**: prima quello di
-  `~/.config/ernesto/` (regole di base valide ovunque), poi quello del progetto
-  (convenzioni, comandi di test e lint, vincoli specifici). Un `agent.md` nel progetto non
-  cancella più le regole generali.
+- **`identity.md`** — istruzioni operative. È l'unico file che **si somma**: prima quello
+  di `~/.config/ernesto/context/` (regole di base valide ovunque), poi quello del progetto
+  (convenzioni, comandi di test e lint, vincoli specifici). Un `identity.md` nel progetto
+  non cancella le regole generali.
 - **`credentials.md`** — dichiara quali variabili d'ambiente servono, a cosa
   servono e come ottenerle. **Non contiene valori reali**: le chiavi stanno
   nelle variabili d'ambiente (o in un `.env` locale, caricato come fallback e
@@ -107,7 +124,7 @@ leggibili e scrivibili dagli strumenti `read_file`/`write_file`.
 
 ### MCP (opzionale)
 
-Copia `mcp.json.example` in `mcp.json` e configura i tuoi server stdio; richiede
+Copia `context-base/mcp.json.example` in `context/mcp.json` e configura i tuoi server stdio; richiede
 `pip install mcp`. Se la libreria o un server non sono disponibili, ernesto
 parte comunque con un avviso.
 
@@ -138,8 +155,8 @@ Il prompt mostra sempre i cumulativi di sessione: `Tu [24.1k in · 6.3k out · $
 
 ## Configurazione: `config.yaml`
 
-Copia `config.yaml.example` in `config.yaml` nella cartella di lavoro (o in
-`~/.config/ernesto/`) per impostare il modello iniziale, il modello usato per i riassunti
+Copia `context-base/config.yaml` in `context/config.yaml` nella cartella di lavoro (o
+lascia quello globale in `~/.config/ernesto/context/`) per impostare il modello iniziale, il modello usato per i riassunti
 della compattazione e i pattern pericolosi aggiuntivi. Vince il primo file trovato; tutte
 le chiavi sono opzionali e un file malformato viene ignorato senza bloccare l'avvio.
 
@@ -199,7 +216,7 @@ ernesto/
   cli.py              # typer + REPL + comandi slash
   agent.py            # loop agentico (streaming + tool calls)
   models.py           # registry modelli + prezzi live
-  context.py          # soul.md / agent.md / memory.md / credentials.md
+  context.py          # context/: soul.md, identity.md, credentials.md, indice memorie
   session.py          # stato, log JSONL, costi, compattazione storia
   config.py           # costanti, .env, config.yaml
   mcp_client.py       # integrazione MCP opzionale

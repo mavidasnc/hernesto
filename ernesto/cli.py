@@ -29,8 +29,10 @@ from .config import (
 )
 from .context import (
     Context,
+    context_files,
     extract_env_vars,
     load_context,
+    memory_files,
     summary_line,
     system_prompt_parts,
     verify_env_vars,
@@ -343,6 +345,14 @@ def cmd_load(state: SessionState, arg: str) -> None:
 def cmd_context(state: SessionState, tools: list[Tool]) -> None:
     """Mostra provenienza e stima token del contesto, strumenti e stato della sessione."""
     print(f"Modello: {state.model.label} ({state.model.id}) · reasoning: {state.reasoning_effort}")
+    print(f"Cartella di lavoro: {state.workdir}")
+    print("File di contesto letti all'avvio:")
+    for etichetta, percorso in context_files(state.context):
+        print(f"  · {etichetta}: {percorso if percorso else '(non trovato)'}")
+    for percorso in memory_files(state.workdir):
+        print(f"  · memoria: {percorso}")
+    if state.context.session_memory:
+        print(f"  · memoria di sessione: {state.workdir / state.context.session_memory}")
     print("System prompt:")
     total = 0
     for label, text in system_prompt_parts(state.context, state.json_mode):

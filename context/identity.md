@@ -1,4 +1,4 @@
-# agent.md — istruzioni operative del progetto
+# identity.md — istruzioni operative del progetto ernesto
 
 ## Progetto
 Questo repository contiene **ernesto**, un agente da terminale in Python (3.10+)

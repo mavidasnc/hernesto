@@ -1,5 +1,5 @@
-# config.yaml di base per ernesto — installato in ~/.config/ernesto/
-# Vale per ogni cartella di lavoro che non abbia un config.yaml proprio.
+# config.yaml di base per ernesto — installato in ~/.config/ernesto/context/
+# Vale per ogni cartella di lavoro che non abbia un context/config.yaml proprio.
 
 model:
   default: qwen/qwen3.8-27b

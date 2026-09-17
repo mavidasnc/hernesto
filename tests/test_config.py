@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ernesto.config import config_section, load_deny_patterns, load_user_config
+from ernesto.config import CONTEXT_DIR, config_section, load_deny_patterns, load_user_config
 from ernesto.models import DEFAULT_MODEL, find_model
 
 CONFIG_SAMPLE = """model:
@@ -19,6 +19,13 @@ safety:
   deny_patterns:
     - "shutdown"
 """
+
+
+def _ctx(base: Path) -> Path:
+    """La sottocartella context/ di una base, creata al volo per i test."""
+    d = base / CONTEXT_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 @pytest.fixture(autouse=True)
@@ -37,7 +44,7 @@ def test_config_assente_non_e_un_errore(workdir: Path) -> None:
 
 def test_config_letta_dalla_workdir(workdir: Path) -> None:
     """Le sezioni dichiarate vengono lette."""
-    (workdir / "config.yaml").write_text(CONFIG_SAMPLE, encoding="utf-8")
+    (_ctx(workdir) / "config.yaml").write_text(CONFIG_SAMPLE, encoding="utf-8")
     assert config_section(workdir, "model")["default"] == "qwen/qwen3.8-27b"
     assert config_section(workdir, "compact")["summary_model"] == "google/gemini-2.5-flash"
     assert config_section(workdir, "compact")["llm_summary"] is True
@@ -45,13 +52,13 @@ def test_config_letta_dalla_workdir(workdir: Path) -> None:
 
 def test_config_malformata_viene_ignorata(workdir: Path) -> None:
     """Uno YAML rotto non impedisce l'avvio: si continua con i default."""
-    (workdir / "config.yaml").write_text("model: [non chiusa\n  :", encoding="utf-8")
+    (_ctx(workdir) / "config.yaml").write_text("model: [non chiusa\n  :", encoding="utf-8")
     assert load_user_config(workdir) == {}
 
 
 def test_deny_patterns_estesi_da_config(workdir: Path) -> None:
     """I pattern di config.yaml si aggiungono a quelli di default, non li sostituiscono."""
-    (workdir / "config.yaml").write_text(CONFIG_SAMPLE, encoding="utf-8")
+    (_ctx(workdir) / "config.yaml").write_text(CONFIG_SAMPLE, encoding="utf-8")
     patterns = load_deny_patterns(workdir)
     assert "shutdown" in patterns
     assert any("sudo" in p for p in patterns)

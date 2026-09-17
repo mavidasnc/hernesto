@@ -1,10 +1,11 @@
-"""Contesto del modello: file di istruzioni (soul.md / agent.md / credentials.md) e
+"""Contesto del modello: file di istruzioni (soul.md / identity.md / credentials.md) e
 indice delle memorie.
 
-I file di contesto vengono cercati nella cartella di lavoro e poi in ~/.config/ernesto/.
-Le memorie (memory.md persistente e memories/memory-<ts>.md di sessione) sono invece solo
-della cartella di lavoro e NON vengono caricate nel prompt: entra l'indice, il contenuto
-si legge con read_file quando il modello decide che serve.
+Tutti i file letti all'avvio stanno nella sottocartella `context/`, cercata prima nella
+cartella di lavoro e poi in ~/.config/ernesto/: la struttura e' la stessa nei due posti.
+Le memorie (memory.md persistente e memories/memory-<ts>.md di sessione) restano invece
+nella radice della cartella di lavoro e NON vengono caricate nel prompt: entra l'indice, il
+contenuto si legge con read_file quando il modello decide che serve.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import MEMORY_DIR, MEMORY_INDEX_LIMIT, config_dir
+from .config import CONTEXT_DIR, MEMORY_DIR, MEMORY_INDEX_LIMIT, config_dir
 
 BASE_SYSTEM_PROMPT = (
     "Sei un assistente utile e conciso. "
@@ -65,11 +66,11 @@ class Context:
 
     workdir: Path
     soul: ContextFile = field(default_factory=lambda: ContextFile("soul.md"))
-    agent: ContextFile = field(default_factory=lambda: ContextFile("agent.md"))
-    # Istruzioni di base da ~/.config/ernesto/agent.md: si SOMMANO a quelle del progetto
-    # invece di essere sostituite, altrimenti aprire un progetto con un suo agent.md
-    # farebbe sparire le regole generali.
-    agent_base: ContextFile = field(default_factory=lambda: ContextFile("agent.md"))
+    identity: ContextFile = field(default_factory=lambda: ContextFile("identity.md"))
+    # Istruzioni di base da ~/.config/ernesto/context/identity.md: si SOMMANO a quelle del
+    # progetto invece di essere sostituite, altrimenti aprire un progetto con un suo
+    # identity.md farebbe sparire le regole generali.
+    identity_base: ContextFile = field(default_factory=lambda: ContextFile("identity.md"))
     credentials: ContextFile = field(default_factory=lambda: ContextFile("credentials.md"))
     soul_mode: str = "append"  # "append" | "replace"
     # Le memorie non sono file di contesto caricati: nel prompt entra solo il loro indice.
@@ -78,8 +79,8 @@ class Context:
 
 
 def _read_file(name: str, base: Path, origin: str) -> ContextFile:
-    """Legge un file di contesto da una cartella precisa (assente o illeggibile = vuoto)."""
-    candidate = base / name
+    """Legge un file da `base/context/` (assente o illeggibile = contenuto vuoto)."""
+    candidate = base / CONTEXT_DIR / name
     if candidate.is_file():
         try:
             return ContextFile(name, candidate, candidate.read_text(encoding="utf-8"), origin)
@@ -131,17 +132,18 @@ def parse_soul(content: str) -> tuple[str, str]:
 def load_context(workdir: Path, session_memory: str | None = None) -> Context:
     """Carica i file di contesto e costruisce l'indice delle memorie.
 
-    soul.md / agent.md / credentials.md: workdir, poi ~/.config/ernesto/.
+    context/soul.md, context/identity.md e context/credentials.md: prima nella cartella di
+    lavoro, poi in ~/.config/ernesto/.
     Le memorie non vengono caricate: entra nel prompt solo il loro indice.
     """
     ctx = Context(workdir=workdir)
     ctx.soul = _find_file("soul.md", workdir)
-    # agent.md e' l'unico file che si somma: le istruzioni di base valgono ovunque, quelle
+    # identity.md e' l'unico file che si somma: le istruzioni di base valgono ovunque, quelle
     # del progetto si aggiungono. Se workdir e config dir coincidono, si carica una volta.
-    ctx.agent_base = _read_file("agent.md", config_dir(), "config")
-    ctx.agent = _read_file("agent.md", workdir, "workdir")
-    if ctx.agent.path is not None and ctx.agent.path == ctx.agent_base.path:
-        ctx.agent_base = ContextFile("agent.md")
+    ctx.identity_base = _read_file("identity.md", config_dir(), "config")
+    ctx.identity = _read_file("identity.md", workdir, "workdir")
+    if ctx.identity.path is not None and ctx.identity.path == ctx.identity_base.path:
+        ctx.identity_base = ContextFile("identity.md")
     ctx.credentials = _find_file("credentials.md", workdir)
     ctx.session_memory = session_memory
     ctx.memory_index = memory_index(workdir, session_memory)
@@ -221,38 +223,51 @@ def reload_memory(ctx: Context) -> bool:
     return ctx.memory_index != before
 
 
+def context_files(ctx: Context) -> list[tuple[str, Path | None]]:
+    """I file di contesto e la loro posizione effettiva, per mostrarli in /context.
+
+    Un percorso None significa che il file non e' stato trovato: e' informazione utile
+    quanto il percorso, perche' dice all'utente che quel pezzo di contesto non c'e'.
+    """
+    return [
+        ("soul.md", ctx.soul.path),
+        ("identity.md (base)", ctx.identity_base.path),
+        ("identity.md (progetto)", ctx.identity.path),
+        ("credentials.md", ctx.credentials.path),
+    ]
+
+
 def summary_line(ctx: Context) -> str:
-    """Riga di riepilogo del contesto, es. `Contesto: soul.md ✓ · agent.md ✓ · credentials.md ✗`."""
+    """Riga di riepilogo, es. `Contesto: soul.md ✓ · identity.md ✓✓ · credentials.md ✗ · memorie: 2`."""
 
     def mark(cf: ContextFile) -> str:
         return f"{cf.name} {'✓' if cf.content is not None else '✗'}"
 
     memorie = len(memory_files(ctx.workdir))
-    agent = "agent.md " + ("✓✓" if ctx.agent.content and ctx.agent_base.content else
-                           "✓" if ctx.agent.content or ctx.agent_base.content else "✗")
-    return f"Contesto: {mark(ctx.soul)} · {agent} · {mark(ctx.credentials)} · memorie: {memorie}"
+    identity = "identity.md " + ("✓✓" if ctx.identity.content and ctx.identity_base.content else
+                                 "✓" if ctx.identity.content or ctx.identity_base.content else "✗")
+    return f"Contesto: {mark(ctx.soul)} · {identity} · {mark(ctx.credentials)} · memorie: {memorie}"
 
 
 def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str, str]]:
     """Le parti del system prompt con etichetta di provenienza (per /context)."""
     parts: list[tuple[str, str]] = []
     if ctx.soul.content and ctx.soul_mode == "replace":
-        origin = ctx.soul.path or ctx.soul.name
-        parts.append((f"soul.md (mode: replace, {origin})", ctx.soul.content))
+        parts.append(("soul.md (mode: replace)", ctx.soul.content))
     else:
         if ctx.soul.content:
-            parts.append((f"soul.md ({ctx.soul.path or ctx.soul.name})", ctx.soul.content))
+            parts.append(("soul.md", ctx.soul.content))
         parts.append(("prompt di default", f"{BASE_SYSTEM_PROMPT}\n\n{AGENT_SYSTEM_PROMPT}"))
-    if ctx.agent_base.content:
-        parts.append((f"agent.md base ({ctx.agent_base.path or ctx.agent_base.name})",
-                      f"## Istruzioni operative di base\n\n{ctx.agent_base.content}"))
-    if ctx.agent.content:
-        parts.append((f"agent.md ({ctx.agent.path or ctx.agent.name})",
-                      f"## Istruzioni operative del progetto\n\n{ctx.agent.content}"))
+    if ctx.identity_base.content:
+        parts.append(("identity.md (base)",
+                      f"## Istruzioni operative di base\n\n{ctx.identity_base.content}"))
+    if ctx.identity.content:
+        parts.append(("identity.md (progetto)",
+                      f"## Istruzioni operative del progetto\n\n{ctx.identity.content}"))
     if ctx.memory_index:
         parts.append(("indice memorie", ctx.memory_index))
     if ctx.credentials.content:
-        parts.append((f"credentials.md ({ctx.credentials.path or ctx.credentials.name})",
+        parts.append(("credentials.md",
                       f"## Credenziali del progetto\n\n{ctx.credentials.content}"))
     if json_mode:
         parts.append(("JSON mode", JSON_MODE_SUFFIX.strip()))
