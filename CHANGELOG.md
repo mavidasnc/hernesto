@@ -5,6 +5,15 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.1.3] - 2026-09-16
+
+### Aggiunto
+- **Gestione delle interruzioni con Ctrl+C**: durante lo streaming annulla il turno e ripristina la storia; durante `run_command` uccide l'intero albero del processo (`taskkill /F /T` su Windows, `killpg` altrove) prima di annullare — prima il processo figlio restava orfano e il terminale sembrava bloccato. Al prompt, Ctrl+C esce.
+- **UI di avvio**: schermo pulito e banner incorniciato (versione, modello, reasoning, workdir, contesto, log, comandi); avvisi di avvio stampati sotto il banner; riga di separazione sopra la zona di input a ogni prompt.
+
+### Cambiato
+- `run_command` usa `subprocess.Popen` con gruppo di processi separato (al posto di `subprocess.run`) per consentire la terminazione controllata su timeout e Ctrl+C.
+
 ## [0.1.2] - 2026-09-16
 
 ### Corretto

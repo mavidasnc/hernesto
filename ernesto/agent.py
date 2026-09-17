@@ -137,6 +137,11 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
             print(f"\n[Errore provider] {exc}")
             del state.messages[rewind_index:]
             return
+        except KeyboardInterrupt:
+            # Ctrl+C durante lo streaming: annulla il turno, torna al prompt
+            print("\n[Interrotto] turno annullato dall'utente (Ctrl+C).")
+            del state.messages[rewind_index:]
+            return
 
         state.record_usage(prompt_tok, completion_tok)
 
@@ -164,7 +169,14 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
 
         print()
         for tool_call in tool_calls:
-            result = run_tool_call(tools_by_name, tool_call)
+            try:
+                result = run_tool_call(tools_by_name, tool_call)
+            except KeyboardInterrupt:
+                # Ctrl+C durante uno strumento (es. run_command): il tool ha gia'
+                # ucciso il processo figlio; qui annullo il turno e torno al prompt
+                print("\n[Interrotto] esecuzione strumento annullata dall'utente (Ctrl+C).")
+                del state.messages[rewind_index:]
+                return
             state.tool_calls_count += 1
             name = tool_call["function"]["name"]
             print(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -56,8 +57,8 @@ CREDENTIALS_TEMPLATE = """# Credenziali — progetto
 """
 
 COMANDI = (
-    "/context · /clear · /model · /tools · /reasoning [livello] · /yolo · "
-    "/log · /cost · /save · exit/quit · Ctrl+C"
+    "/context · /clear · /model · /tools · /reasoning · /yolo · /log · /cost · "
+    "/save · exit/quit · Ctrl+C interrompe il turno (al prompt: esce)"
 )
 
 
@@ -66,6 +67,52 @@ def _configure_console() -> None:
     for stream in (sys.stdout, sys.stderr):
         with contextlib.suppress(AttributeError, ValueError):
             stream.reconfigure(errors="replace")
+
+
+def _clear_screen() -> None:
+    """Pulisce il terminale (solo se TTY: in pipe/non interattivo non tocca nulla)."""
+    if sys.stdout.isatty():
+        print("\033[2J\033[H", end="", flush=True)
+
+
+def _box_lines(lines: list[str], width: int) -> list[str]:
+    """Incornicia le righe in un box Unicode largo `width` colonne."""
+    inner = width - 4  # bordi + spazi
+    boxed = ["┌" + "─" * (width - 2) + "┐"]
+    for line in lines:
+        if line == "":
+            boxed.append("│" + " " * (width - 2) + "│")
+        else:
+            boxed.append("│  " + line[:inner].ljust(inner) + "│")
+    boxed.append("└" + "─" * (width - 2) + "┘")
+    return boxed
+
+
+def _print_banner(state: SessionState, logger: SessionLogger) -> None:
+    """Intestazione stile CLI agentica: identita', modello, contesto, comandi."""
+    contesto = summary_line(state.context).replace("Contesto: ", "")
+    lines = [
+        f"ernesto v{__version__} — agente da terminale (OpenRouter)",
+        "",
+        f"modello:   {state.model.label} ({state.model.id})",
+        f"reasoning: {state.reasoning_effort} · workdir: {state.workdir}",
+        f"contesto:  {contesto}",
+        f"log:       {logger.path}",
+        "",
+        f"comandi: {COMANDI}",
+    ]
+    if not sys.stdout.isatty():
+        print("\n".join(line for line in lines if line))
+        return
+    width = min(max(shutil.get_terminal_size().columns, 50), 100)
+    print("\033[36m" + "\n".join(_box_lines(lines, width)) + "\033[0m")
+
+
+def _prompt_rule() -> None:
+    """Riga di separazione sopra la zona di input (la chat scorre sopra, il prompt resta in basso)."""
+    if sys.stdout.isatty():
+        width = min(shutil.get_terminal_size().columns, 100)
+        print("\033[2m" + "─" * width + "\033[0m")
 
 
 def make_confirm_fn(state: SessionState) -> ConfirmFn:
@@ -326,8 +373,11 @@ def main(
             "per le istruzioni su come configurarla."
         )
         raise typer.Exit(1)
-    for name in check.optional_missing:
-        print(f"[Avviso] variabile opzionale {name} mancante: lo strumento corrispondente rispondera' errore.")
+    # Avvisi raccolti e stampati dopo il banner (altrimenti il clear li cancellerebbe)
+    startup_warnings = [
+        f"[Avviso] variabile opzionale {name} mancante: lo strumento corrispondente rispondera' errore."
+        for name in check.optional_missing
+    ]
 
     if reasoning not in REASONING_LEVELS:
         print(f"Errore: --reasoning non valido: {reasoning}. Usa: {', '.join(REASONING_LEVELS)}")
@@ -373,20 +423,23 @@ def main(
     tools = build_native_tools(state, make_confirm_fn(state))
     mcp_tools, mcp_warnings = load_mcp_tools(workdir, enabled=not no_mcp)
     tools.extend(mcp_tools)
-    for warning in mcp_warnings:
-        print(f"[Avviso] {warning}")
-
-    print(f"\nernesto v{__version__} — modello attivo: {state.model.label}")
-    print(summary_line(ctx))
-    print(f"Log: {logger.path}")
+    startup_warnings.extend(f"[Avviso] {w}" for w in mcp_warnings)
     if state.yolo:
-        print("YOLO attivo — conferme disattivate: il modello eseguira' comandi e invii senza chiedere.")
+        startup_warnings.append(
+            "YOLO attivo — conferme disattivate: il modello eseguira' comandi e invii senza chiedere."
+        )
     if state.dry_run:
-        print("DRY-RUN attivo — write/edit/send/run saranno solo simulati.")
-    print(f"Comandi: {COMANDI}\n")
+        startup_warnings.append("DRY-RUN attivo — write/edit/send/run saranno solo simulati.")
+
+    _clear_screen()
+    _print_banner(state, logger)
+    for warning in startup_warnings:
+        print(warning)
+    print()
 
     while True:
         try:
+            _prompt_rule()
             user_input = input(prompt_indicator(state)).strip()
         except (EOFError, KeyboardInterrupt):
             print("\nArrivederci!")
@@ -404,7 +457,11 @@ def main(
         state.logger.log("user", content=user_input)
 
         print(f"{state.model.label}> ", end="", flush=True)
-        run_turn(state, client, tools)
+        try:
+            run_turn(state, client, tools)
+        except KeyboardInterrupt:
+            # Rete di sicurezza: run_turn gestisce gia' Ctrl+C, ma non si sa mai
+            print("\n[Interrotto] turno annullato dall'utente (Ctrl+C).")
 
 
 def run() -> None:

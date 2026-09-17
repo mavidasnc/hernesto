@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import signal
 import subprocess
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -22,6 +24,20 @@ def find_deny_match(command: str, patterns: list[str]) -> str | None:
         except re.error:
             continue  # pattern malformato in config.yaml: ignorato
     return None
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Termina il processo e tutta la sua discendenza (best effort, mai eccezioni)."""
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+            )
+        else:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        pass
 
 
 class RunCommandTool(Tool):
@@ -61,22 +77,37 @@ class RunCommandTool(Tool):
             )
             if not ok:
                 return "ERRORE: comando rifiutato dall'utente (denylist di sicurezza)"
+        # Popen (invece di subprocess.run) per poter uccidere l'albero dei processi
+        # su timeout e su Ctrl+C: il gruppo di processi separato evita che il segnale
+        # arrivi direttamente al figlio bypassando la nostra gestione.
+        popen_kwargs: dict[str, Any] = {}
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            popen_kwargs["start_new_session"] = True
         try:
-            completed = subprocess.run(
+            proc = subprocess.Popen(
                 command,
                 shell=True,
                 cwd=str(self._state.workdir),
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                timeout=int(timeout),
+                **popen_kwargs,
             )
-        except subprocess.TimeoutExpired:
-            return f"ERRORE: timeout dopo {timeout}s"
         except OSError as exc:
             return f"ERRORE: {exc}"
-        output = (completed.stdout or "") + (completed.stderr or "")
+        try:
+            output, _ = proc.communicate(timeout=int(timeout))
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            return f"ERRORE: timeout dopo {timeout}s"
+        except KeyboardInterrupt:
+            _kill_tree(proc)
+            raise  # risale fino a run_turn, che annulla il turno
+        output = output or ""
         note = ""
         if len(output) > TOOL_OUTPUT_LIMIT:
             output = output[:TOOL_OUTPUT_LIMIT]
             note = f"\n…[output troncato a {TOOL_OUTPUT_LIMIT} caratteri]"
-        return f"exit {completed.returncode}\n{output}{note}"
+        return f"exit {proc.returncode}\n{output}{note}"
