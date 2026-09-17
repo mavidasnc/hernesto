@@ -9,6 +9,7 @@ e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/)
 
 ### Cambiato
 - **I launcher ricostruiscono il virtualenv quando non e' utilizzabile**: `ernesto.cmd` e `ernesto.sh` non si limitano piu' a controllare che `.venv/Scripts/python.exe` esista, lo eseguono. Un virtualenv contiene le dipendenze ma non l'interprete: il suo python e' un guscio che cerca la libreria standard nel percorso assoluto scritto in `pyvenv.cfg`, percorso che su un altro computer non esiste, e li' il file c'e' ma non parte. Se la prova fallisce il launcher cancella il virtualenv inservibile, ne crea uno nuovo con il Python dell'ospite (`py -3`, poi `python`, ciascuno provato davvero perche' su Windows `python` puo' essere il segnaposto del Microsoft Store), installa `requirements.txt` e prosegue con l'avvio. Cosi' la cartella del progetto si sposta da un computer all'altro senza portarsi dietro `.venv`.
+- **`.gitattributes`** fissa i fine riga dei launcher a prescindere dal computer su cui si fa il clone: `eol=lf` per `.sh`, che con i ritorni a capo di Windows verrebbe rifiutato dall'interprete, `eol=crlf` per `.cmd`.
 
 ## [0.6.2] - 2026-09-17
 

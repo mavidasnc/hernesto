@@ -1,0 +1,4 @@
+# I fine riga dei launcher non dipendono dal computer su cui si fa il clone:
+# uno script bash con CRLF non parte ("bad interpreter"), un file batch vuole CRLF.
+*.sh text eol=lf
+*.cmd text eol=crlf
