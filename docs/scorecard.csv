@@ -1,0 +1,6 @@
+data,modello,esercizio,punteggio,massimo,token_in,token_out,costo_usd,tool_call,note
+2026-09-16,qwen/qwen3.8-27b,ES1,10,10,72069,4167,0.0260,18,test corretto dopo il primo run (aspettativa su 90); documentato nel report; non penalizzato
+2026-09-16,qwen/qwen3.8-27b,ES2,10,10,81110,4125,0.0279,20,test-first documentato con 4 FAILED nel report; 3 bug corretti; firme invariate
+2026-09-16,qwen/qwen3.8-27b,ES3,8,10,234435,6530,0.0668,13,self-check reale superato (PASS + FAIL su corruzione); -1 solo stdlib: from __future__ import annotations fuori whitelist; -1 sezione Auto-valutazione assente in report.md
+2026-09-16,qwen/qwen3.8-27b,ES3,9,10,154705,6924,0.0508,24,secondo run dopo fix list_files e prompt aggiornato; stdlib OK; -1 Auto-valutazione ancora assente (report.py rigenera report.md); token in -34% vs run 1
+2026-09-16,qwen/qwen3.8-27b,ES4,10,10,84011,6602,0.0348,18,15 test vitest verdi; build ok; funzioni pure verificate con controllo esterno; persistenza localStorage con gestione JSON corrotto; UI in italiano; boilerplate rimosso

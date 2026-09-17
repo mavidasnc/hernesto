@@ -5,6 +5,11 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [Non rilasciato]
+
+### Aggiunto
+- **`RESEND_FROM_NAME`**: nome visualizzato del mittente usato come default da `send_email` quando il modello non passa `from_name` (prima il default era la costante `Chat CLI` e la variabile veniva ignorata). Documentata in `credentials.md` insieme ai vincoli sul dominio verificato.
+
 ## [0.1.3] - 2026-09-16
 
 ### Aggiunto

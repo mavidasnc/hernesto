@@ -14,3 +14,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
+
+# Artefatti dei run di benchmark (rigenerabili dai fixture in docs/)
+es[0-9]*/
+*.log
+x_tmp_report.md

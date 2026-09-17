@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from ..session import SessionState
 
 RESEND_URL = "https://api.resend.com/emails"
+DEFAULT_FROM_NAME = "Chat CLI"
 
 
 class SendEmailTool(Tool):
@@ -20,6 +21,7 @@ class SendEmailTool(Tool):
 
     RESEND_FROM puo' contenere l'indirizzo semplice (chat@example.com, completato con
     from_name) oppure gia' la forma completa `Nome <chat@example.com>`.
+    Se il modello non passa from_name, si usa RESEND_FROM_NAME e, in mancanza, DEFAULT_FROM_NAME.
     """
 
     name = "send_email"
@@ -30,7 +32,10 @@ class SendEmailTool(Tool):
             "to": {"type": "string", "description": "Indirizzo email del destinatario"},
             "subject": {"type": "string", "description": "Oggetto della email"},
             "text": {"type": "string", "description": "Corpo della email (testo semplice)"},
-            "from_name": {"type": "string", "description": "Nome del mittente", "default": "Chat CLI"},
+            "from_name": {
+                "type": "string",
+                "description": "Nome del mittente (default: RESEND_FROM_NAME)",
+            },
         },
         "required": ["to", "subject", "text"],
     }
@@ -39,7 +44,7 @@ class SendEmailTool(Tool):
         self._state = state
         self._confirm = confirm_fn
 
-    def run(self, to: str, subject: str, text: str, from_name: str = "Chat CLI", **_: Any) -> str:
+    def run(self, to: str, subject: str, text: str, from_name: str = "", **_: Any) -> str:
         api_key = os.environ.get("RESEND_API_KEY")
         if not api_key:
             return "ERRORE: RESEND_API_KEY non configurata (vedi credentials.md)."
@@ -52,7 +57,8 @@ class SendEmailTool(Tool):
             preview = f"A: {to}\nOggetto: {subject}\n\n{text[:500]}"
             if not self._confirm("Inviare questa email?", preview=preview):
                 return "ERRORE: invio email annullato dall'utente"
-        from_field = sender if "<" in sender else f"{from_name} <{sender}>"
+        name = from_name or os.environ.get("RESEND_FROM_NAME") or DEFAULT_FROM_NAME
+        from_field = sender if "<" in sender else f"{name} <{sender}>"
         body = {"from": from_field, "to": [to], "subject": subject, "text": text}
         try:
             resp = httpx.post(
