@@ -4,7 +4,7 @@ rem %~dp0 e' la cartella di questo file, quindi non ci sono percorsi assoluti ca
 rem La cartella di lavoro resta quella corrente: e' la workdir dell'agente.
 setlocal
 set "PYTHONIOENCODING=utf-8"
-set "ERNESTO_HOME=%~dp0.."
+set "ERNESTO_HOME=%~dp0."
 if not exist "%ERNESTO_HOME%\.venv\Scripts\python.exe" (
   echo [ernesto] virtualenv non trovato in %ERNESTO_HOME%\.venv
   echo [ernesto] crealo con: python -m venv .venv ^&^& .venv\Scripts\pip install -r requirements.txt

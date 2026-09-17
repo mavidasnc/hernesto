@@ -36,10 +36,10 @@ pip install -r requirements-dev.txt
 python ernesto.py                 # oppure: python -m ernesto
 ```
 
-Per lanciarlo da qualunque cartella ci sono `bin/ernesto.cmd` (e `bin/ernesto` per git bash
-e WSL): usano il Python del `.venv` del repository e mantengono come cartella di lavoro
-quella da cui li lanci. Aggiungi la cartella `bin` del repository al PATH, oppure copia il
-`.cmd` in una cartella gia' nel PATH facendolo puntare a quello del repository.
+Per lanciarlo da qualunque cartella ci sono `ernesto.cmd` (e `ernesto.sh` per git bash e
+WSL) nella radice del repository: usano il Python del `.venv` e mantengono come cartella di
+lavoro quella da cui li lanci. Aggiungi la radice del repository al PATH, oppure copia il
+`.cmd` in una cartella già nel PATH facendolo puntare a quello del repository.
 
 Opzioni (`python ernesto.py --help` per l'elenco completo):
 

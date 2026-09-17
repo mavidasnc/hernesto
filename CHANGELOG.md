@@ -5,6 +5,11 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.6.1] - 2026-09-17
+
+### Cambiato
+- **I launcher passano nella radice del repository**: `ernesto.cmd` e `ernesto.sh` al posto di `bin/ernesto.cmd` e `bin/ernesto`. Cosi' basta mettere la radice nel PATH invece di una sottocartella. Lo script per shell prende l'estensione `.sh` perche' un file `ernesto` non puo' convivere con il package `ernesto/` nella stessa cartella.
+
 ## [0.6.0] - 2026-09-17
 
 ### Aggiunto
