@@ -8,8 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 .venv/Scripts/python -m pytest tests/ -q                       # tutta la suite
 .venv/Scripts/python -m pytest tests/test_shell.py -q           # un file
 .venv/Scripts/python -m pytest tests/test_shell.py::test_x -q   # un singolo test
-.venv/Scripts/python -m ruff check ernesto/ tests/ ernesto.py   # lint
+.venv/Scripts/python -m ruff check ernesto/ tests/ ernesto.py build_bundle.py   # lint
 python ernesto.py --workdir PATH --model ID --dry-run           # avvio manuale
+python build_bundle.py                                          # bundle autonomo in dist/
 ```
 
 Su Linux/macOS sostituire `.venv/Scripts/` con `.venv/bin/`.
@@ -148,5 +149,12 @@ Ogni cambiamento rilevante va annotato in `CHANGELOG.md` (Keep a Changelog, in i
   ernesto**, non istruzioni per Claude Code. Modificarli cambia il comportamento
   dell'agente, non il tuo.
 - `playbooks/`: procedure per l'agente, lette su sua iniziativa.
+- `build_bundle.py`: distribuzione, non runtime. Costruisce in `dist/` una copia autonoma
+  con il Python embeddable di python.org per i computer senza interprete installato; il
+  suo punto delicato e' il file `._pth` del runtime, che rimpiazza il calcolo di
+  `sys.path` e va riscritto perche' comprenda il bundle e le sue librerie. I launcher del
+  repository restano la strada normale: provano l'interprete del `.venv` e lo
+  ricostruiscono quando non parte, per esempio perche' la cartella arriva da un altro
+  computer.
 - `logs/`, `saves/`, `memories/`, `workspace/`, `rassegne/`: output di sessione e dati
   dell'agente, ignorati da git.

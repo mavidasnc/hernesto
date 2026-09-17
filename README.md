@@ -55,6 +55,27 @@ assoluto registrato in `pyvenv.cfg` al momento della creazione. Su un altro comp
 percorso non esiste, il guscio si ferma con `No Python at '...'`, e il launcher fa comunque
 da capo scartando la copia inservibile. Sono 110 MB che nello zip si risparmiano.
 
+### Un bundle che parte senza Python installato
+
+Quando sul computer di destinazione Python non c'è e non si può installare, si costruisce
+un bundle autonomo, che include il runtime:
+
+```bash
+python build_bundle.py            # dist/ernesto/ e dist/ernesto-<versione>-win64.zip
+python build_bundle.py --no-zip   # solo la cartella
+```
+
+Lo script scarica da python.org il pacchetto *embeddable* di Python 3.12 (una decina di
+MB), installa dentro il bundle le dipendenze di `requirements.txt` e copia i sorgenti; il
+risultato sono circa 70 MB di cartella, 28 di zip. Si copia dove si vuole, anche su una
+chiavetta, e si avvia con il suo `ernesto.cmd`: non serve Python, non serve una
+connessione, non si tocca nulla del computer ospite.
+
+Il bundle si costruisce su Windows a 64 bit, perché i pacchetti compilati vengono scelti
+per l'interprete che li installa, e va ricostruito quando cambiano le dipendenze o i
+sorgenti. Non contiene `.env` né `context/credentials.md`: le chiavi API vanno messe sul
+computer di destinazione, non spedite dentro l'archivio.
+
 Opzioni (`python ernesto.py --help` per l'elenco completo):
 
 | Opzione | Effetto |

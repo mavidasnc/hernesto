@@ -22,6 +22,9 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
+# Bundle autonomo prodotto da build_bundle.py: si rigenera, non si versiona
+dist/
+
 # Artefatti dei run di benchmark
 es[0-9]*/
 *.log

@@ -5,6 +5,12 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.7.0] - 2026-09-17
+
+### Aggiunto
+- **`build_bundle.py`: un bundle che parte dove Python non c'e'**. Costruisce in `dist/` una cartella autonoma con il runtime embeddable di Python 3.12 scaricato da python.org, le dipendenze di `requirements.txt` installate al suo interno e i sorgenti del progetto, piu' lo zip pronto da copiare (circa 70 MB di cartella, 28 di archivio). Si avvia con il proprio `ernesto.cmd` senza interprete di sistema, senza connessione e senza installare niente sul computer ospite: il file `._pth` del runtime viene riscritto perche' `sys.path` comprenda il bundle e le sue librerie, e nient'altro. Serve quando il computer di destinazione non ha Python e non lo si puo' installare; negli altri casi resta piu' comodo copiare il progetto senza `.venv` e lasciare che il launcher lo ricostruisca.
+- `.env` e `context/credentials.md` sono esclusi dal bundle per costruzione, con un test che lo verifica: l'archivio nasce per essere spostato, le chiavi API restano sul computer che lo costruisce.
+
 ## [0.6.3] - 2026-09-17
 
 ### Cambiato
