@@ -5,6 +5,15 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.6.2] - 2026-09-17
+
+### Rimosso
+- **Cartella `docs/`**: il benchmark a cinque esercizi (fixture, prompt, verifiche e scorecard), il materiale storico di `docs/contesto-originale/` e i due prompt `kimi-code-chat-agent` escono dal repository. Erano documenti di una fase di progettazione ormai conclusa, fermi a un'architettura che il codice ha nel frattempo superato, e la loro presenza suggeriva una procedura di verifica che nessuno esegue piu'.
+
+### Cambiato
+- `CLAUDE.md` e `.gitignore` non citano piu' `docs/`, che non esiste piu'.
+- `rassegne/` entra in `.gitignore` accanto a `memories/` e `workspace/`: e' output prodotto dall'agente durante le sessioni, non contenuto del progetto.
+
 ## [0.6.1] - 2026-09-17
 
 ### Cambiato

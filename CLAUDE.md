@@ -147,8 +147,6 @@ Ogni cambiamento rilevante va annotato in `CHANGELOG.md` (Keep a Changelog, in i
 - `context/soul.md`, `context/identity.md`, `context/credentials.md`: input **runtime di
   ernesto**, non istruzioni per Claude Code. Modificarli cambia il comportamento
   dell'agente, non il tuo.
-- `docs/`: benchmark a 5 esercizi (fixture → prompt → verifica → scorecard, vedi
-  `docs/ernesto-benchmark-README.md`) e materiale storico, compreso `docs/contesto-originale/`.
 - `playbooks/`: procedure per l'agente, lette su sua iniziativa.
-- `logs/`, `saves/`, `memories/`, `workspace/`: output di sessione e dati dell'agente,
-  ignorati da git.
+- `logs/`, `saves/`, `memories/`, `workspace/`, `rassegne/`: output di sessione e dati
+  dell'agente, ignorati da git.

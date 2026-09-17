@@ -10,6 +10,7 @@ saves/
 # Memorie e spazio di lavoro dell'agente: dati suoi, non del progetto.
 # Di workspace/ resta in git il solo README, per documentare la struttura.
 memories/
+rassegne/
 workspace/*
 !workspace/README.md
 
@@ -21,7 +22,7 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
-# Artefatti dei run di benchmark (rigenerabili dai fixture in docs/)
+# Artefatti dei run di benchmark
 es[0-9]*/
 *.log
 x_tmp_report.md
