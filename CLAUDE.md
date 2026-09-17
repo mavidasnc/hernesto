@@ -90,6 +90,11 @@ i rami di `handle_command`. Il prompt usa `prompt_toolkit` tramite `make_reader(
 ricade su `input()` se il terminale non lo supporta: ogni nuova funzione del prompt deve
 restare dentro quel fallback.
 
+Le **skill** (`ernesto/skills.py`) sono conoscenza caricata su richiesta: `discover_skills`
+legge solo i frontmatter di `skills/<nome>/SKILL.md` (workdir e config dir, il progetto
+vince), `skills_index` mette nel prompt nome e descrizione, e i corpi entrano solo per le
+skill in `SessionState.loaded_skills`, riletti da disco a ogni composizione del prompt.
+
 ## Invarianti da non violare
 
 - **Un tool non lancia mai.** `Tool.run()` restituisce sempre una stringa; gli errori

@@ -18,8 +18,12 @@ from ernesto.session import SessionState
 def isolated_config_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Isola i test dal ~/.config/ernesto reale della macchina."""
     fake = tmp_path / "config-home"
+    # Ogni modulo che importa config_dir va isolato: altrimenti i test vedono i file
+    # veri della macchina (skill globali, contesto installato) e falliscono a seconda
+    # di come e' configurato il computer su cui girano.
     monkeypatch.setattr("ernesto.context.config_dir", lambda: fake)
     monkeypatch.setattr("ernesto.config.config_dir", lambda: fake, raising=False)
+    monkeypatch.setattr("ernesto.skills.config_dir", lambda: fake, raising=False)
 
 
 @pytest.fixture

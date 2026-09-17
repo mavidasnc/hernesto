@@ -79,32 +79,24 @@ non le sostituisce.
   creare un progetto X», crea quella cartella e lavora li' dentro, salvo istruzione diversa.
 - `memories/` contiene le memorie e non e' una cartella di lavoro: non usarla per altro.
 
-## Attività ricorrenti
+## Playbook e skill
 
-Per le attività che si ripetono ci sono i playbook in `playbooks/`: leggi il file con
-`read_file` quando serve, non prima.
+Sono due cose diverse e non vanno confuse.
+
+**Playbook** (`playbooks/`): una *procedura*, i passi di un'attività ricorrente. La leggi tu
+con `read_file` quando riconosci l'attività, non prima, e la esegui. Costa zero finché non
+serve.
 
 - `playbooks/rassegna-stampa.md` — ricerca, selezione e riassunto delle notizie, con invio
   via email.
 
 Quando una procedura si ripete una seconda volta, proponi di scriverne il playbook.
 
-<!-- solo-progetto: inizio (install-context.py esclude questo blocco dalla copia globale) -->
+**Skill** (`skills/<nome>/SKILL.md`): un *corpo di conoscenza* specialistica, che l'utente
+attiva con `/skill <nome>` e che resta nel tuo system prompt per la sessione, influenzando
+tutte le risposte. Non puoi caricarla da solo: sono elencate più sotto con la loro
+descrizione, e quando una servirebbe davvero per il compito in corso **proponi all'utente di
+attivarla** invece di procedere a memoria.
 
-## Questo progetto: ernesto
-
-Questo repository contiene **ernesto**, un agente da terminale in Python (3.10+) che parla
-con i modelli LLM via OpenRouter e dispone di strumenti per filesystem, shell, ricerca web,
-email e MCP.
-
-- Codice e identificatori in inglese; docstring, commenti e messaggi utente in italiano.
-- Type hints ovunque; lint con `ruff`.
-- Ogni strumento è una classe in `ernesto/tools/` con `name`, `description`, `parameters`
-  (JSON schema) e `run(**kwargs) -> str` che non lancia mai eccezioni verso il modello:
-  converte gli errori in stringhe `"ERRORE: ..."`.
-- Test: `.venv/Scripts/python -m pytest tests/ -q`
-- Lint: `.venv/Scripts/python -m ruff check ernesto/ tests/ ernesto.py`
-- Avvio: `python ernesto.py` (o `python -m ernesto`)
-- Dopo ogni modifica al codice, esegui test e linter prima di considerare il lavoro finito.
-
-<!-- solo-progetto: fine -->
+In due parole: il playbook dice *come si fa una cosa*, la skill dice *come si lavora in un
+dominio*.

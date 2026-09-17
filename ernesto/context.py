@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import CONTEXT_DIR, MEMORY_DIR, MEMORY_FILE, MEMORY_INDEX_LIMIT, config_dir
+from .skills import active_skill_parts, discover_skills, skills_index
 
 BASE_SYSTEM_PROMPT = (
     "Sei un assistente utile e conciso. "
@@ -286,8 +287,11 @@ def summary_line(ctx: Context) -> str:
     )
 
 
-def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str, str]]:
+def system_prompt_parts(
+    ctx: Context, json_mode: bool = False, loaded_skills: list[str] | None = None
+) -> list[tuple[str, str]]:
     """Le parti del system prompt con etichetta di provenienza (per /context)."""
+    attive = loaded_skills or []
     parts: list[tuple[str, str]] = []
     for cf, etichetta in ((ctx.soul_base, "soul.md (base)"), (ctx.soul, "soul.md (progetto)")):
         if cf.content:
@@ -303,6 +307,11 @@ def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str
                       f"## Istruzioni operative del progetto\n\n{ctx.identity.content}"))
     if ctx.memory_index:
         parts.append(("indice memorie", ctx.memory_index))
+    disponibili = discover_skills(ctx.workdir)
+    indice = skills_index(disponibili, attive)
+    if indice:
+        parts.append(("indice skill", indice))
+    parts.extend(active_skill_parts(ctx.workdir, attive))
     for cf, etichetta in ((ctx.credentials_base, "credentials.md (base)"),
                           (ctx.credentials, "credentials.md (progetto)")):
         if cf.content:
@@ -312,9 +321,11 @@ def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str
     return parts
 
 
-def compose_system_prompt(ctx: Context, json_mode: bool = False) -> str:
+def compose_system_prompt(
+    ctx: Context, json_mode: bool = False, loaded_skills: list[str] | None = None
+) -> str:
     """Compone il system prompt completo dalle parti di contesto."""
-    return "\n\n".join(text for _, text in system_prompt_parts(ctx, json_mode))
+    return "\n\n".join(text for _, text in system_prompt_parts(ctx, json_mode, loaded_skills))
 
 
 def extract_env_vars(credentials_text: str) -> list[str]:

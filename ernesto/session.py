@@ -249,21 +249,26 @@ class SessionState:
     tool_calls_count: int = 0
     compacted_count: int = 0    # risultati strumento riassunti nella sessione
     compacted_tokens: int = 0   # token stimati risparmiati (cumulativo)
+    # Skill attive: i nomi, non i contenuti. I corpi si rileggono da disco quando si
+    # compone il system prompt, cosi' una modifica alla skill ha effetto al turno dopo.
+    loaded_skills: list[str] = field(default_factory=list)
     # Riassuntore LLM per la compattazione automatica: None = riassunto deterministico.
     # Viene impostato dal REPL solo dopo conferma dell'utente (compact.llm_summary).
     summarizer: Callable[[str, str], str | None] | None = None
 
     def system_prompt(self) -> str:
         """System prompt completo per la configurazione corrente."""
-        return compose_system_prompt(self.context, self.json_mode)
+        return compose_system_prompt(self.context, self.json_mode, self.loaded_skills)
 
-    def refresh_system_prompt(self) -> bool:
-        """Ricarica memory.md e riscrive messages[0] se e' cambiata. True se aggiornato.
+    def refresh_system_prompt(self, force: bool = False) -> bool:
+        """Ricompone messages[0] se l'indice delle memorie e' cambiato. True se aggiornato.
 
         Va chiamata una volta per turno, non a ogni step: cambiare il prefisso del prompt
-        dentro il ciclo distruggerebbe il prompt caching del provider.
+        dentro il ciclo distruggerebbe il prompt caching del provider. Con `force` si
+        ricompone comunque: serve dopo /skill, che cambia il prompt senza toccare le memorie.
         """
-        if not reload_memory(self.context):
+        cambiata = reload_memory(self.context)
+        if not cambiata and not force:
             return False
         if self.messages and self.messages[0].get("role") == "system":
             self.messages[0]["content"] = self.system_prompt()

@@ -13,7 +13,7 @@ CONFIG_SAMPLE = """model:
   default: qwen/qwen3.8-27b
   json_mode: false
 compact:
-  summary_model: google/gemini-2.5-flash
+  summary_model: qwen/qwen3.8-27b
   llm_summary: true
 safety:
   deny_patterns:
@@ -46,7 +46,7 @@ def test_config_letta_dalla_workdir(workdir: Path) -> None:
     """Le sezioni dichiarate vengono lette."""
     (_ctx(workdir) / "config.yaml").write_text(CONFIG_SAMPLE, encoding="utf-8")
     assert config_section(workdir, "model")["default"] == "qwen/qwen3.8-27b"
-    assert config_section(workdir, "compact")["summary_model"] == "google/gemini-2.5-flash"
+    assert config_section(workdir, "compact")["summary_model"] == "qwen/qwen3.8-27b"
     assert config_section(workdir, "compact")["llm_summary"] is True
 
 

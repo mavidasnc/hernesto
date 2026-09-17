@@ -6,7 +6,7 @@ model:
   json_mode: false
 
 compact:
-  summary_model: google/gemini-2.5-flash
+  summary_model: qwen/qwen3.8-27b
   llm_summary: false
 
 safety:

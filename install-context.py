@@ -23,7 +23,7 @@ from pathlib import Path
 
 SOURCE = Path(__file__).parent / "context"
 FILES = ("soul.md", "identity.md", "config.yaml")
-WORK_DIRS = ("workspace/projects", "memories")
+WORK_DIRS = ("workspace/projects", "memories", "skills")
 
 # Il blocco fra questi marcatori riguarda solo il repository di ernesto e non viene copiato.
 ONLY_PROJECT_RE = re.compile(

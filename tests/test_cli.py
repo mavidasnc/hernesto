@@ -45,3 +45,8 @@ def test_completer_filtra_mentre_si_digita() -> None:
 def test_completer_muto_sul_testo_normale() -> None:
     """Un messaggio all'agente non attiva il completamento."""
     assert _proposte("leggi il file") == []
+
+
+def test_skill_nel_completamento() -> None:
+    """/skill compare fra i comandi proposti."""
+    assert "/skill" in _proposte("/sk")

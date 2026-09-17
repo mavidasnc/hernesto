@@ -5,6 +5,19 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.6.0] - 2026-09-17
+
+### Aggiunto
+- **Skill caricabili su richiesta**: una skill e' un corpo di conoscenza specialistica in `skills/<nome>/SKILL.md`, con frontmatter `name` e `description`. Si attiva con `/skill` (menu con le frecce, o elenco numerato dove il terminale non lo consente) e resta nel system prompt per la sessione; `/skill off` la rimuove. Nel prompt entrano sempre solo nome e descrizione di quelle disponibili, cosi' il modello puo' proporne l'attivazione senza che i corpi pesino in ogni richiesta. Le skill si cercano nella cartella di lavoro e in `~/.config/ernesto/skills/`: a parita' di nome vince quella del progetto.
+- **Skill `wordpress`** come esempio e primo caso d'uso: trinita' della sicurezza, hook, query, struttura di un plugin, errori ricorrenti.
+- `_select()` in `cli.py`: menu a frecce con fallback numerico automatico quando questionary non riesce a inizializzarsi.
+
+### Cambiato
+- **Menu del completamento leggibile**: testo bianco su sfondo nero, voce selezionata a colori invertiti, descrizioni in grigio.
+- **Il modello dei riassunti passa a `qwen/qwen3.8-27b`** (era Gemini 2.5 Flash), sempre configurabile con `compact.summary_model`.
+- `refresh_system_prompt(force=True)` ricompone il prompt anche quando le memorie non sono cambiate: serve dopo `/skill`, che cambia il contesto senza toccarle.
+- `identity.md` distingue esplicitamente playbook (procedure che il modello consulta da se') e skill (conoscenza che l'utente attiva), perche' due meccanismi vicini senza confine dichiarato finiscono per confondersi.
+
 ## [0.5.0] - 2026-09-17
 
 ### Aggiunto

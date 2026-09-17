@@ -18,6 +18,7 @@ from openai import OpenAI
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.styles import Style
 
 from . import __version__
 from .agent import run_turn
@@ -28,6 +29,7 @@ from .config import (
     CONTEXT_DIR,
     MEMORY_DIR,
     OPENROUTER_BASE,
+    SKILLS_DIR,
     config_dir,
     config_section,
     load_env_file,
@@ -56,6 +58,7 @@ from .session import (
     summarize_with_llm,
     validate_snapshot,
 )
+from .skills import Skill, discover_skills, find_skill, skill_body
 from .tools import (
     LEVEL_DESTRUCTIVE,
     LEVEL_EXTERNAL,
@@ -92,6 +95,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("/context", "Contesto caricato, token, strumenti e stato della sessione"),
     ("/command", "Questo elenco dei comandi"),
     ("/model", "Cambia il modello attivo (azzera la conversazione)"),
+    ("/skill", "Attiva una skill per la sessione (`off` per disattivarla)"),
     ("/tools", "Strumenti registrati, nativi e MCP"),
     ("/reasoning", "Mostra o cambia il livello di reasoning (low|medium|high|xhigh)"),
     ("/compact", "Compatta i risultati strumento in storia (`llm` per il riassunto generato)"),
@@ -173,6 +177,20 @@ def _badge(level: str) -> str:
     return f"\033[{color}m{label}\033[0m" if sys.stdout.isatty() else label
 
 
+# Menu di completamento: testo bianco su nero, voce selezionata a colori invertiti.
+# Con una tavolozza di due soli colori l'inversione e' l'unico modo per distinguere la
+# riga corrente; la descrizione resta grigia per non competere col nome del comando.
+COMPLETION_STYLE = Style.from_dict({
+    "completion-menu": "bg:#000000 #ffffff",
+    "completion-menu.completion": "bg:#000000 #ffffff",
+    "completion-menu.completion.current": "bg:#ffffff #000000",
+    "completion-menu.meta.completion": "bg:#000000 #808080",
+    "completion-menu.meta.completion.current": "bg:#ffffff #000000",
+    "scrollbar.background": "bg:#000000",
+    "scrollbar.button": "bg:#808080",
+})
+
+
 class _CommandCompleter(Completer):
     """Propone i comandi slash mentre si digita, con la descrizione accanto."""
 
@@ -203,6 +221,7 @@ def make_reader() -> Callable[[str], str]:
             completer=_CommandCompleter(),
             complete_while_typing=True,
             history=InMemoryHistory(),
+            style=COMPLETION_STYLE,
         )
     except Exception:
         return lambda prompt: input(prompt)
@@ -428,7 +447,7 @@ def _context_rows(state: SessionState) -> list[tuple[str, int, str]]:
             nome, _, dove = etichetta.partition(" (")
             origini.setdefault(nome, []).append(dove.rstrip(")"))
     token: dict[str, int] = {}
-    for label, text in system_prompt_parts(state.context, state.json_mode):
+    for label, text in system_prompt_parts(state.context, state.json_mode, state.loaded_skills):
         nome = label.partition(" (")[0]
         token[nome] = token.get(nome, 0) + estimate_tokens(text)
     righe = []
@@ -513,6 +532,86 @@ def cmd_command() -> None:
         print(f"  {nome.ljust(larghezza)}  {descrizione}")
     print(f"  {'exit'.ljust(larghezza)}  Termina la sessione (anche `quit`)")
     print("\nCtrl+C interrompe il turno in corso; al prompt esce.")
+
+
+def cmd_skill(state: SessionState, arg: str) -> None:
+    """Carica o scarica una skill: /skill [nome] · /skill off [nome]."""
+    parti = arg.split()
+    disponibili = discover_skills(state.workdir)
+
+    if parti and parti[0].lower() == "off":
+        if len(parti) > 1:
+            nome = parti[1]
+            attive = [s for s in state.loaded_skills if s.lower() == nome.lower()]
+            if not attive:
+                print(f"La skill '{nome}' non e' attiva.")
+                return
+            state.loaded_skills = [s for s in state.loaded_skills if s.lower() != nome.lower()]
+            print(f"Skill '{attive[0]}' disattivata.")
+        elif state.loaded_skills:
+            print(f"Skill disattivate: {', '.join(state.loaded_skills)}")
+            state.loaded_skills = []
+        else:
+            print("Nessuna skill attiva.")
+        state.refresh_system_prompt(force=True)
+        return
+
+    if not disponibili:
+        print(f"Nessuna skill in {state.workdir / SKILLS_DIR} ne' in {config_dir() / SKILLS_DIR}.")
+        print("Una skill e' una cartella con dentro SKILL.md e il frontmatter name/description.")
+        return
+
+    nome = " ".join(parti).strip()
+    if not nome:
+        nome = _pick_skill(disponibili, state.loaded_skills)
+        if not nome:
+            return
+
+    skill = find_skill(state.workdir, nome)
+    if skill is None:
+        print(f"Skill '{nome}' non trovata. Usa /skill senza argomenti per l'elenco.")
+        return
+    if skill.name in state.loaded_skills:
+        print(f"Skill '{skill.name}' gia' attiva.")
+        return
+
+    state.loaded_skills.append(skill.name)
+    state.refresh_system_prompt(force=True)
+    costo = estimate_tokens(skill_body(skill))
+    print(f"Skill '{skill.name}' attiva ({skill.origin}) · ~{fmt_tokens(costo)} tok nel system prompt.")
+    print("Resta attiva per la sessione; /skill off la rimuove.")
+
+
+def _select(domanda: str, voci: list[str]) -> int:
+    """Scelta da un elenco: frecce se il terminale lo consente, numeri altrimenti.
+
+    questionary non riesce a inizializzarsi su alcuni terminali (git bash solleva
+    NoConsoleScreenBufferError), quindi il menu a frecce non e' garantito: il fallback
+    numerico resta sempre disponibile. Restituisce l'indice scelto, -1 se annullato.
+    """
+    if sys.stdin.isatty():
+        try:
+            scelta = questionary.select(domanda, choices=voci).ask()
+            return voci.index(scelta) if scelta in voci else -1
+        except (KeyboardInterrupt, EOFError):
+            return -1
+        except Exception:
+            pass  # terminale non supportato: si prosegue con l'elenco numerato
+    print(f"\n{domanda}")
+    for i, voce in enumerate(voci, 1):
+        print(f"  [{i}] {voce}")
+    raw = input("\nNumero (Invio per annullare): ").strip()
+    return int(raw) - 1 if raw.isdigit() and 1 <= int(raw) <= len(voci) else -1
+
+
+def _pick_skill(disponibili: list[Skill], attive: list[str]) -> str:
+    """Menu di scelta della skill da attivare."""
+    voci = [
+        f"{s.name}{' [attiva]' if s.name in attive else ''} — {s.description} ({s.origin})"
+        for s in disponibili
+    ]
+    scelto = _select("Quale skill vuoi attivare?", voci)
+    return disponibili[scelto].name if scelto >= 0 else ""
 
 
 def cmd_tools(tools: list[Tool]) -> None:
@@ -621,6 +720,8 @@ def handle_command(state: SessionState, user_input: str, tools: list[Tool], clie
         print("Conversazione azzerata (conteggi cumulativi e log mantenuti).")
     elif command == "/yolo":
         cmd_yolo(state)
+    elif command == "/skill":
+        cmd_skill(state, arg)
     elif command == "/tools":
         cmd_tools(tools)
     elif command == "/log":

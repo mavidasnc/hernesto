@@ -149,6 +149,7 @@ parte comunque con un avviso.
 | `/model` | Cambia il modello attivo (azzera la conversazione) |
 | `/context` | Riepilogo compatto della sessione (`/context files` per i percorsi completi) |
 | `/command` | Elenco dei comandi con una descrizione breve |
+| `/skill` | Attiva una skill per la sessione (`/skill off` la disattiva) |
 | `/clear` | Azzera la conversazione (mantiene log e conteggi cumulativi) |
 | `/compact` | Riassume subito i risultati strumento in storia (`/compact N` preserva N giri, `/compact llm` fa riassumere a un modello) |
 | `/yolo` | Attiva/disattiva il bypass delle conferme |
@@ -169,6 +170,28 @@ con le frecce.
 > `response_format: json_object` impedisce ai provider di emettere tool call
 > native. Per usare gli strumenti lascia il JSON mode disattivato; `/context`
 > segnala lo stato ("Strumenti: DISATTIVATI (JSON mode attivo)").
+
+## Skill
+
+Una skill e' un corpo di conoscenza specialistica (le convenzioni di un linguaggio, le
+regole di un cliente, un tono di scrittura) che serve solo in alcune sessioni. Sta in
+`skills/<nome>/SKILL.md`, con frontmatter `name` e `description`, e la cartella permette di
+tenere accanto script ed esempi.
+
+```
+skills/
+  wordpress/
+    SKILL.md
+```
+
+Nel system prompt entrano sempre solo nome e descrizione delle skill disponibili: il corpo
+si carica con `/skill <nome>` e resta attivo per la sessione, `/skill off` lo rimuove. Le
+skill si cercano nella cartella di lavoro e in `~/.config/ernesto/skills/`, che valgono in
+ogni progetto.
+
+**Skill o playbook?** Un playbook (`playbooks/`) e' una *procedura* che il modello legge da
+se' quando riconosce l'attivita'; una skill e' *conoscenza* che attivi tu e che influenza
+tutte le risposte della sessione.
 
 ## Configurazione: `config.yaml`
 

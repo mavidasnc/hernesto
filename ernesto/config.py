@@ -25,7 +25,7 @@ COMPACT_MIN_CHARS = 500     # sotto questa soglia il riassunto non risparmierebb
 COMPACT_HEAD_CHARS = 300    # testa del contenuto conservata nel riassunto
 # Modello usato per il riassunto LLM della compattazione: deve essere economico, perche'
 # riassumere il payload piu' grande della sessione con un modello caro vanifica il risparmio.
-COMPACT_SUMMARY_MODEL = "google/gemini-2.5-flash"
+COMPACT_SUMMARY_MODEL = "qwen/qwen3.8-27b"
 COMPACT_SUMMARY_MAX_CHARS = 6000  # quanto contenuto si manda al riassuntore
 
 # Voci massime nell'indice delle memorie dentro il system prompt: l'indice e' piccolo per
@@ -38,6 +38,10 @@ MEMORY_FILE = "memory.md"  # la memoria persistente, accanto a quelle di session
 # sia in ~/.config/ernesto/: una sola regola da ricordare, nessun file di configurazione
 # sparso nella radice del progetto (l'unica eccezione e' .env).
 CONTEXT_DIR = "context"
+
+# Skill: conoscenze specialistiche caricate su richiesta con /skill (vedi ernesto/skills.py).
+# Cercate nella cartella di lavoro e in ~/.config/ernesto/, come i file di contesto.
+SKILLS_DIR = "skills"
 
 # Pattern pericolosi di default per run_command (regex): richiedono conferma.
 # Il comando viene normalizzato prima del confronto (minuscole, spazi collassati) e il match
