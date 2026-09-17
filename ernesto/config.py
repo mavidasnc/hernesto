@@ -32,6 +32,7 @@ COMPACT_SUMMARY_MAX_CHARS = 6000  # quanto contenuto si manda al riassuntore
 # costruzione (nome, data, prima riga), il contenuto si legge con read_file quando serve.
 MEMORY_INDEX_LIMIT = 10
 MEMORY_DIR = "memories"
+MEMORY_FILE = "memory.md"  # la memoria persistente, accanto a quelle di sessione
 
 # Tutti i file letti all'avvio stanno in questa sottocartella, sia nella cartella di lavoro
 # sia in ~/.config/ernesto/: una sola regola da ricordare, nessun file di configurazione

@@ -63,24 +63,33 @@ cartella di lavoro e poi in `~/.config/ernesto/`. La struttura è identica nei d
 ```
 
 L'unica eccezione è `.env`, che resta nella radice della cartella di lavoro (e, come
-fallback globale, in `~/.config/ernesto/.env`). Anche le memorie restano fuori da
-`context/`, perché sono dati prodotti dall'agente e non configurazione: `memory.md` nella
-radice e `memories/` accanto.
+fallback globale, in `~/.config/ernesto/.env`). Fuori da `context/` stanno anche le cartelle
+che l'agente riempie da sé, perché sono dati e non configurazione:
+
+- `memories/` — `memory.md` (persistente) e `memory-<timestamp>.md` (di sessione);
+- `workspace/` — appunti, bozze e output intermedi, con `workspace/projects/<nome>/` per i
+  progetti nuovi;
+
+entrambe escluse da git e ricreate da `install-context.py`.
 
 `/context` mostra il percorso completo di ogni file effettivamente letto, compresi quelli
 non trovati.
 
-Le istruzioni di base (identità, profilo utente, disciplina di codice) stanno in
-`context-base/` nel repository e si installano una volta sola con:
+Le istruzioni di base (identità, profilo utente, disciplina di codice) stanno in `context/`
+di questo repository e si installano una volta sola con:
 
 ```bash
 python install-context.py
 ```
 
 Lo script le copia in `~/.config/ernesto/context/`, da dove valgono in **qualunque**
-cartella di lavoro: così ernesto funziona sui progetti reali senza copiarvi dentro nulla. In
-`~/.config/ernesto/.env` conviene tenere le chiavi, lette come fallback quando il progetto
-non ne ha uno.
+cartella di lavoro, e crea `workspace/projects/` e `memories/`. In `~/.config/ernesto/.env`
+conviene tenere le chiavi, lette come fallback quando il progetto non ne ha uno.
+
+`context/identity.md` contiene anche una sezione delimitata dai marcatori `solo-progetto`,
+riservata a questo repository: viene esclusa dalla copia globale, e quando si lavora qui
+dentro ernesto carica dal file locale solo quel blocco, così le regole generali non entrano
+due volte nel prompt.
 
 - **`soul.md`** — personalità e tono dell'assistente. Preposto al system prompt;
   con una riga frontmatter `mode: replace` lo sostituisce del tutto.
@@ -124,7 +133,7 @@ leggibili e scrivibili dagli strumenti `read_file`/`write_file`.
 
 ### MCP (opzionale)
 
-Copia `context-base/mcp.json.example` in `context/mcp.json` e configura i tuoi server stdio; richiede
+Copia `context/mcp.json.example` in `context/mcp.json` e configura i tuoi server stdio; richiede
 `pip install mcp`. Se la libreria o un server non sono disponibili, ernesto
 parte comunque con un avviso.
 
@@ -155,8 +164,8 @@ Il prompt mostra sempre i cumulativi di sessione: `Tu [24.1k in · 6.3k out · $
 
 ## Configurazione: `config.yaml`
 
-Copia `context-base/config.yaml` in `context/config.yaml` nella cartella di lavoro (o
-lascia quello globale in `~/.config/ernesto/context/`) per impostare il modello iniziale, il modello usato per i riassunti
+Copia `context/config.yaml` nella cartella di lavoro del progetto (o lascia quello globale
+in `~/.config/ernesto/context/`) per impostare il modello iniziale, il modello usato per i riassunti
 della compattazione e i pattern pericolosi aggiuntivi. Vince il primo file trovato; tutte
 le chiavi sono opzionali e un file malformato viene ignorato senza bloccare l'avvio.
 

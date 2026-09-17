@@ -35,6 +35,13 @@ CREDENTIALS_SAMPLE = """# Credenziali — progetto demo
 """
 
 
+def _mem(base: Path) -> Path:
+    """Il percorso della memoria persistente, con la cartella memories/ creata al volo."""
+    d = base / MEMORY_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "memory.md"
+
+
 def _ctx(base: Path) -> Path:
     """La sottocartella context/ di una base, creata al volo per i test."""
     d = base / CONTEXT_DIR
@@ -145,7 +152,7 @@ def test_verify_env_vars_openrouter_missing_fatal() -> None:
 
 def test_indice_memorie_nel_prompt_senza_contenuto(workdir: Path) -> None:
     """Il prompt elenca le memorie ma non ne carica il contenuto."""
-    (workdir / "memory.md").write_text("# Preferenze\nIl cliente preferisce PostgreSQL.", encoding="utf-8")
+    _mem(workdir).write_text("# Preferenze\nIl cliente preferisce PostgreSQL.", encoding="utf-8")
     ctx = load_context(workdir)
     prompt = compose_system_prompt(ctx)
     assert "memory.md" in prompt
@@ -193,10 +200,10 @@ def test_reload_memory_rileva_i_cambiamenti(workdir: Path) -> None:
     """L'indice si aggiorna quando una memoria nasce o cambia dimensione."""
     ctx = load_context(workdir)
     assert reload_memory(ctx) is False
-    (workdir / "memory.md").write_text("primo fatto", encoding="utf-8")
+    _mem(workdir).write_text("primo fatto", encoding="utf-8")
     assert reload_memory(ctx) is True
     assert reload_memory(ctx) is False
-    (workdir / "memory.md").write_text("un fatto completamente diverso", encoding="utf-8")
+    _mem(workdir).write_text("un fatto completamente diverso", encoding="utf-8")
     assert reload_memory(ctx) is True
     assert "memory.md" in ctx.memory_index
 
@@ -238,3 +245,37 @@ def test_identity_non_duplicata_se_workdir_e_config_coincidono(
     (_ctx(workdir) / "identity.md").write_text("Regola unica.", encoding="utf-8")
     monkeypatch.setattr("ernesto.context.config_dir", lambda: workdir)
     assert compose_system_prompt(load_context(workdir)).count("Regola unica.") == 1
+
+
+IDENTITY_CON_BLOCCO = """Regole generali valide ovunque.
+
+<!-- solo-progetto: inizio (escluso dalla copia globale) -->
+Regola solo di questo progetto.
+<!-- solo-progetto: fine -->
+"""
+
+
+def test_blocco_solo_progetto_estratto(workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Se il file di progetto e' anche la sorgente del globale, il generale non si ripete."""
+    fake_config = tmp_path / "config-home"
+    (fake_config / CONTEXT_DIR).mkdir(parents=True)
+    (fake_config / CONTEXT_DIR / "identity.md").write_text("Regole generali valide ovunque.", encoding="utf-8")
+    (_ctx(workdir) / "identity.md").write_text(IDENTITY_CON_BLOCCO, encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    prompt = compose_system_prompt(load_context(workdir))
+    assert prompt.count("Regole generali valide ovunque.") == 1
+    assert "Regola solo di questo progetto." in prompt
+
+
+def test_senza_blocco_il_file_di_progetto_entra_intero(
+    workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negli altri progetti, senza marcatori, l'identity.md locale vale per intero."""
+    fake_config = tmp_path / "config-home"
+    (fake_config / CONTEXT_DIR).mkdir(parents=True)
+    (fake_config / CONTEXT_DIR / "identity.md").write_text("Regole generali.", encoding="utf-8")
+    (_ctx(workdir) / "identity.md").write_text("Comandi di questo progetto: npm test.", encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    prompt = compose_system_prompt(load_context(workdir))
+    assert "Regole generali." in prompt
+    assert "Comandi di questo progetto: npm test." in prompt

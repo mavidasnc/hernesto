@@ -3,8 +3,8 @@ indice delle memorie.
 
 Tutti i file letti all'avvio stanno nella sottocartella `context/`, cercata prima nella
 cartella di lavoro e poi in ~/.config/ernesto/: la struttura e' la stessa nei due posti.
-Le memorie (memory.md persistente e memories/memory-<ts>.md di sessione) restano invece
-nella radice della cartella di lavoro e NON vengono caricate nel prompt: entra l'indice, il
+Le memorie stanno tutte in `memories/` della cartella di lavoro (memory.md persistente e
+memory-<ts>.md di sessione) e NON vengono caricate nel prompt: entra l'indice, il
 contenuto si legge con read_file quando il modello decide che serve.
 """
 
@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import CONTEXT_DIR, MEMORY_DIR, MEMORY_INDEX_LIMIT, config_dir
+from .config import CONTEXT_DIR, MEMORY_DIR, MEMORY_FILE, MEMORY_INDEX_LIMIT, config_dir
 
 BASE_SYSTEM_PROMPT = (
     "Sei un assistente utile e conciso. "
@@ -48,6 +48,12 @@ _HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 _ENV_VAR_RE = re.compile(r"\b([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\b")
 _FRONTMATTER_MODE_RE = re.compile(r"^mode:\s*(replace|append)\s*$", re.IGNORECASE)
+# Blocco di un identity.md che riguarda solo il progetto in cui si trova (vedi
+# project_only_section e install-context.py, che usa gli stessi marcatori).
+_ONLY_PROJECT_RE = re.compile(
+    r"<!-- solo-progetto: inizio.*?-->(.*?)<!-- solo-progetto: fine -->",
+    re.DOTALL,
+)
 
 
 @dataclass
@@ -103,6 +109,17 @@ def _find_file(name: str, workdir: Path, workdir_only: bool = False) -> ContextF
     return ContextFile(name)
 
 
+def project_only_section(content: str) -> str | None:
+    """Il blocco `solo-progetto` di un identity.md, o None se non c'e'.
+
+    Serve al repository di ernesto, dove lo stesso file e' sia la sorgente delle istruzioni
+    globali (install-context.py le copia senza questo blocco) sia il contesto del progetto:
+    senza questa estrazione le regole generali entrerebbero due volte nel prompt.
+    """
+    match = _ONLY_PROJECT_RE.search(content)
+    return match.group(1).strip() if match else None
+
+
 def parse_soul(content: str) -> tuple[str, str]:
     """Estrae il frontmatter `mode: replace|append` da soul.md.
 
@@ -144,6 +161,12 @@ def load_context(workdir: Path, session_memory: str | None = None) -> Context:
     ctx.identity = _read_file("identity.md", workdir, "workdir")
     if ctx.identity.path is not None and ctx.identity.path == ctx.identity_base.path:
         ctx.identity_base = ContextFile("identity.md")
+    elif ctx.identity_base.content and ctx.identity.content:
+        # Il file di progetto puo' essere la sorgente stessa delle istruzioni globali: in
+        # quel caso se ne prende solo la parte marcata, altrimenti il generale entra due volte.
+        solo_progetto = project_only_section(ctx.identity.content)
+        if solo_progetto is not None:
+            ctx.identity.content = solo_progetto
     ctx.credentials = _find_file("credentials.md", workdir)
     ctx.session_memory = session_memory
     ctx.memory_index = memory_index(workdir, session_memory)
@@ -166,15 +189,16 @@ def _first_line(path: Path, limit: int = 80) -> str:
 
 
 def memory_files(workdir: Path, limit: int = MEMORY_INDEX_LIMIT) -> list[Path]:
-    """memory.md piu' le memorie di sessione in memories/, dalla piu' recente."""
+    """Le memorie in memories/: prima la persistente, poi quelle di sessione piu' recenti."""
     files: list[Path] = []
-    persistent = workdir / "memory.md"
+    memories_dir = workdir / MEMORY_DIR
+    if not memories_dir.is_dir():
+        return files
+    persistent = memories_dir / MEMORY_FILE
     if persistent.is_file():
         files.append(persistent)
-    memories_dir = workdir / MEMORY_DIR
-    if memories_dir.is_dir():
-        sessions = sorted(memories_dir.glob("memory-*.md"), key=lambda p: p.name, reverse=True)
-        files.extend(sessions[:limit])
+    sessions = sorted(memories_dir.glob("memory-*.md"), key=lambda p: p.name, reverse=True)
+    files.extend(sessions[:limit])
     return files
 
 
@@ -190,8 +214,9 @@ def memory_index(workdir: Path, session_file: str | None = None) -> str:
         "",
         "Non sono caricate nel contesto: leggile con `read_file` SOLO quando ti servono "
         "per capire il contesto o riprendere un lavoro.",
-        "- `memory.md`: memoria persistente del progetto (fatti durevoli, preferenze, decisioni). "
-        "Aggiornala con `edit_file` quando emerge qualcosa che varra' anche nelle sessioni future.",
+        f"- `{MEMORY_DIR}/{MEMORY_FILE}`: memoria persistente del progetto (fatti durevoli, "
+        "preferenze, decisioni). Aggiornala con `edit_file` quando emerge qualcosa che varra' "
+        "anche nelle sessioni future.",
     ]
     if session_file:
         righe.append(

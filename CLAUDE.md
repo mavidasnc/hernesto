@@ -41,9 +41,11 @@ cercati in `context/` prima della workdir e poi di `~/.config/ernesto/` (costant
 `CONTEXT_DIR`), più l'**indice delle memorie**. `identity.md` è l'unico file che si somma
 invece di essere sostituito (`identity_base` dalla config dir più quello del progetto):
 serve perché le regole di base valgano anche in un progetto che ha il suo `identity.md`.
-I file di base versionati stanno in `context-base/` e si installano con
-`install-context.py`; `context/` nel repo è invece il contesto del progetto ernesto.
-`.env` e le memorie restano fuori da `context/`.
+I file versionati stanno in `context/` e si installano con `install-context.py`, che
+esclude dalla copia globale il blocco `solo-progetto` di `identity.md`; quando la workdir è
+questo repo, `project_only_section()` carica dal file locale solo quel blocco, evitando di
+ripetere le regole generali. Fuori da `context/` restano `.env`, `memories/` (memoria
+persistente e di sessione) e `workspace/`, entrambe ignorate da git.
 Le memorie (`memory.md` persistente e `memories/memory-<ts>.md` di sessione) non entrano
 mai nel prompt: `memory_index()` ne elenca nome, dimensione e prima riga, e il modello
 legge il contenuto con `read_file` solo quando serve. `refresh_system_prompt()` ricalcola

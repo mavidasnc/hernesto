@@ -7,6 +7,12 @@ credentials.md
 logs/
 saves/
 
+# Memorie e spazio di lavoro dell'agente: dati suoi, non del progetto.
+# Di workspace/ resta in git il solo README, per documentare la struttura.
+memories/
+workspace/*
+!workspace/README.md
+
 # Python
 __pycache__/
 *.py[cod]

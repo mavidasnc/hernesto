@@ -13,6 +13,8 @@ e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/)
 - **Playbook per le attivita' ricorrenti**: file in `playbooks/`, elencati in `agent.md` e letti con `read_file` solo quando servono. Il primo e' `playbooks/rassegna-stampa.md`.
 
 ### Cambiato
+- **Le memorie stanno tutte in `memories/`**: la persistente diventa `memories/memory.md`, accanto a quelle di sessione. Nuova cartella `workspace/` per cio' che l'agente produce, con `workspace/projects/` come casa dei progetti nuovi. Entrambe escluse da git e create da `install-context.py`.
+- **Una sola cartella `context/`**: i file di base versionati e il contesto del progetto vivono insieme. La parte specifica del repository e' delimitata dai marcatori `solo-progetto`, esclusa dalla copia globale e caricata da sola quando si lavora qui, cosi' le regole generali non entrano due volte nel prompt.
 - **Tutti i file letti all'avvio stanno in `context/`**, sia nella cartella di lavoro sia in `~/.config/ernesto/`: `soul.md`, `identity.md`, `credentials.md`, `config.yaml` e `mcp.json`. Nella radice del progetto resta solo `.env`; le memorie restano fuori perche' sono dati prodotti, non configurazione. Prima erano sparsi fra radice e cartella di configurazione, con regole diverse file per file.
 - **`agent.md` si chiama `identity.md`**. I file di base versionati si sono spostati in `context-base/`, cosi' `context/` del repository e' il contesto del progetto ernesto e non ha piu' un doppio ruolo.
 - **`/context` mostra il percorso completo di ogni file letto**, compresi quelli non trovati e le memorie, oltre alla stima token di ciascuna parte del system prompt.
