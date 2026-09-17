@@ -5,6 +5,11 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.6.3] - 2026-09-17
+
+### Cambiato
+- **I launcher ricostruiscono il virtualenv quando non e' utilizzabile**: `ernesto.cmd` e `ernesto.sh` non si limitano piu' a controllare che `.venv/Scripts/python.exe` esista, lo eseguono. Un virtualenv contiene le dipendenze ma non l'interprete: il suo python e' un guscio che cerca la libreria standard nel percorso assoluto scritto in `pyvenv.cfg`, percorso che su un altro computer non esiste, e li' il file c'e' ma non parte. Se la prova fallisce il launcher cancella il virtualenv inservibile, ne crea uno nuovo con il Python dell'ospite (`py -3`, poi `python`, ciascuno provato davvero perche' su Windows `python` puo' essere il segnaposto del Microsoft Store), installa `requirements.txt` e prosegue con l'avvio. Cosi' la cartella del progetto si sposta da un computer all'altro senza portarsi dietro `.venv`.
+
 ## [0.6.2] - 2026-09-17
 
 ### Rimosso

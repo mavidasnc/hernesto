@@ -41,6 +41,20 @@ WSL) nella radice del repository: usano il Python del `.venv` e mantengono come 
 lavoro quella da cui li lanci. Aggiungi la radice del repository al PATH, oppure copia il
 `.cmd` in una cartella già nel PATH facendolo puntare a quello del repository.
 
+### Spostare ernesto su un altro computer
+
+Copia la cartella del progetto **senza `.venv`** e lancia `ernesto.cmd`: se il virtualenv
+manca, o se è stato copiato da un'altra macchina e quindi non parte, il launcher lo
+ricostruisce con il Python del computer ospite e installa `requirements.txt`, poi avvia
+l'agente. Servono un Python 3.12 o successivo nel PATH e una connessione a internet al
+primo avvio; dalle volte successive parte diretto.
+
+Copiare il `.venv` non evita quel passaggio, anzi: un virtualenv non contiene
+l'interprete, solo le dipendenze e un guscio che cerca la libreria standard nel percorso
+assoluto registrato in `pyvenv.cfg` al momento della creazione. Su un altro computer quel
+percorso non esiste, il guscio si ferma con `No Python at '...'`, e il launcher fa comunque
+da capo scartando la copia inservibile. Sono 110 MB che nello zip si risparmiano.
+
 Opzioni (`python ernesto.py --help` per l'elenco completo):
 
 | Opzione | Effetto |
