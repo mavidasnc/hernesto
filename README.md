@@ -36,6 +36,11 @@ pip install -r requirements-dev.txt
 python ernesto.py                 # oppure: python -m ernesto
 ```
 
+Per lanciarlo da qualunque cartella ci sono `bin/ernesto.cmd` (e `bin/ernesto` per git bash
+e WSL): usano il Python del `.venv` del repository e mantengono come cartella di lavoro
+quella da cui li lanci. Aggiungi la cartella `bin` del repository al PATH, oppure copia il
+`.cmd` in una cartella gia' nel PATH facendolo puntare a quello del repository.
+
 Opzioni (`python ernesto.py --help` per l'elenco completo):
 
 | Opzione | Effetto |
@@ -142,7 +147,8 @@ parte comunque con un avviso.
 | Comando | Effetto |
 |---|---|
 | `/model` | Cambia il modello attivo (azzera la conversazione) |
-| `/context` | Riepilogo del contesto: modello, reasoning, token, strumenti, stato |
+| `/context` | Riepilogo compatto della sessione (`/context files` per i percorsi completi) |
+| `/command` | Elenco dei comandi con una descrizione breve |
 | `/clear` | Azzera la conversazione (mantiene log e conteggi cumulativi) |
 | `/compact` | Riassume subito i risultati strumento in storia (`/compact N` preserva N giri, `/compact llm` fa riassumere a un modello) |
 | `/yolo` | Attiva/disattiva il bypass delle conferme |
@@ -155,6 +161,8 @@ parte comunque con un avviso.
 | `exit` / `quit` / Ctrl+C | Termina |
 
 Il prompt mostra sempre i cumulativi di sessione: `Tu [24.1k in · 6.3k out · $0.0082]>`.
+Digitando `/` compaiono i comandi con la descrizione: si filtrano scrivendo e si scelgono
+con le frecce.
 
 > **Nota — JSON mode e strumenti sono incompatibili.** Se attivi il JSON mode
 > (alla selezione del modello con `/model`), gli strumenti vengono disattivati:

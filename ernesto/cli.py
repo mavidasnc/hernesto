@@ -7,13 +7,17 @@ import json
 import os
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import questionary
 import typer
 from openai import OpenAI
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.history import InMemoryHistory
 
 from . import __version__
 from .agent import run_turn
@@ -21,6 +25,7 @@ from .config import (
     COMPACT_KEEP_RECENT,
     COMPACT_SUMMARY_MODEL,
     COMPACT_THRESHOLD_TOKENS,
+    CONTEXT_DIR,
     MEMORY_DIR,
     OPENROUTER_BASE,
     config_dir,
@@ -80,10 +85,23 @@ CREDENTIALS_TEMPLATE = """# Credenziali — progetto
 - Indirizzo mittente per Resend, es. `Nome <mail@example.com>`.
 """
 
-COMANDI = (
-    "/context · /clear · /compact · /model · /tools · /reasoning · /yolo · /log · /cost · "
-    "/save · /load · exit/quit · Ctrl+C interrompe il turno (al prompt: esce)"
-)
+# Elenco unico dei comandi: da qui nascono il completamento del prompt, /command e l'aiuto.
+# Un test verifica che coincida con i rami di handle_command, cosi' le due liste non
+# possono divergere in silenzio.
+COMMANDS: list[tuple[str, str]] = [
+    ("/context", "Contesto caricato, token, strumenti e stato della sessione"),
+    ("/command", "Questo elenco dei comandi"),
+    ("/model", "Cambia il modello attivo (azzera la conversazione)"),
+    ("/tools", "Strumenti registrati, nativi e MCP"),
+    ("/reasoning", "Mostra o cambia il livello di reasoning (low|medium|high|xhigh)"),
+    ("/compact", "Compatta i risultati strumento in storia (`llm` per il riassunto generato)"),
+    ("/clear", "Azzera la conversazione, mantenendo log e conteggi"),
+    ("/save", "Salva la sessione in saves/ (.txt da leggere, .json da ricaricare)"),
+    ("/load", "Riprende una sessione salvata"),
+    ("/log", "Percorso del log e riepilogo della sessione"),
+    ("/cost", "Costo cumulativo della sessione"),
+    ("/yolo", "Attiva o disattiva il bypass delle conferme"),
+]
 
 
 def _configure_console() -> None:
@@ -123,7 +141,7 @@ def _print_banner(state: SessionState, logger: SessionLogger) -> None:
         f"contesto:  {contesto}",
         f"log:       {logger.path}",
         "",
-        f"comandi: {COMANDI}",
+        "/command per l'elenco dei comandi · exit per uscire",
     ]
     if not sys.stdout.isatty():
         print("\n".join(line for line in lines if line))
@@ -153,6 +171,55 @@ def _badge(level: str) -> str:
     """Etichetta colorata del livello di conferma (senza colore fuori dal terminale)."""
     label, color = LEVEL_BADGES.get(level, ("[ ] CONFERMA", "36"))
     return f"\033[{color}m{label}\033[0m" if sys.stdout.isatty() else label
+
+
+class _CommandCompleter(Completer):
+    """Propone i comandi slash mentre si digita, con la descrizione accanto."""
+
+    def get_completions(self, document: Any, complete_event: Any) -> Iterator[Completion]:
+        testo = document.text_before_cursor.lstrip()
+        if not testo.startswith("/"):
+            return
+        parola = testo.split()[0] if testo.split() else testo
+        for nome, descrizione in COMMANDS:
+            if nome.startswith(parola):
+                yield Completion(
+                    nome,
+                    start_position=-len(parola),
+                    display=nome,
+                    display_meta=descrizione,
+                )
+
+
+def make_reader() -> Callable[[str], str]:
+    """Lettore di input: prompt_toolkit se il terminale lo supporta, altrimenti input().
+
+    prompt_toolkit da' completamento dei comandi, storia e modifica della riga, ma non
+    riesce a inizializzarsi su alcuni terminali (git bash solleva NoConsoleScreenBufferError):
+    in quel caso si ricade su input() per il resto della sessione, senza errori a schermo.
+    """
+    try:
+        sessione = PromptSession(
+            completer=_CommandCompleter(),
+            complete_while_typing=True,
+            history=InMemoryHistory(),
+        )
+    except Exception:
+        return lambda prompt: input(prompt)
+
+    stato = {"attivo": True}
+
+    def leggi(prompt: str) -> str:
+        if stato["attivo"]:
+            try:
+                return sessione.prompt(prompt)
+            except (EOFError, KeyboardInterrupt):
+                raise
+            except Exception:
+                stato["attivo"] = False  # terminale non supportato: si prosegue con input()
+        return input(prompt)
+
+    return leggi
 
 
 def make_confirm_fn(state: SessionState) -> ConfirmFn:
@@ -342,41 +409,110 @@ def cmd_load(state: SessionState, arg: str) -> None:
     print("I costi cumulativi restano quelli di questa sessione: la spesa precedente e' nel salvataggio.")
 
 
-def cmd_context(state: SessionState, tools: list[Tool]) -> None:
-    """Mostra provenienza e stima token del contesto, strumenti e stato della sessione."""
-    print(f"Modello: {state.model.label} ({state.model.id}) · reasoning: {state.reasoning_effort}")
-    print(f"Cartella di lavoro: {state.workdir}")
-    print("File di contesto letti all'avvio:")
-    for etichetta, percorso in context_files(state.context):
-        print(f"  · {etichetta}: {percorso if percorso else '(non trovato)'}")
-    for percorso in memory_files(state.workdir):
-        print(f"  · memoria: {percorso}")
-    if state.context.session_memory:
-        print(f"  · memoria di sessione: {state.workdir / state.context.session_memory}")
-    print("System prompt:")
-    total = 0
+def _short_path(path: Path, state: SessionState) -> str:
+    """Percorso accorciato rispetto alla workdir o alla home, per stare su una riga."""
+    for base, prefisso in ((state.workdir, ""), (Path.home(), "~")):
+        try:
+            rel = path.relative_to(base).as_posix()
+        except ValueError:
+            continue
+        return f"{prefisso}/{rel}" if prefisso else rel
+    return str(path)
+
+
+def _context_rows(state: SessionState) -> list[tuple[str, int, str]]:
+    """Righe (nome, token, provenienza) del system prompt, con base e progetto uniti."""
+    origini: dict[str, list[str]] = {}
+    for etichetta, cf in context_files(state.context):
+        if cf.content:
+            nome, _, dove = etichetta.partition(" (")
+            origini.setdefault(nome, []).append(dove.rstrip(")"))
+    token: dict[str, int] = {}
     for label, text in system_prompt_parts(state.context, state.json_mode):
-        tokens = estimate_tokens(text)
-        total += tokens
-        print(f"  · {label}: ~{fmt_tokens(tokens)} tok")
-    print(f"  = totale ~{fmt_tokens(total)} tok stimati")
-    storia = f"Messaggi in storia: {len(state.messages)} (~{fmt_tokens(state.history_token_estimate())} tok stimati"
-    print(f"{storia} · {state.compacted_count} risultati compattati)" if state.compacted_count else f"{storia})")
+        nome = label.partition(" (")[0]
+        token[nome] = token.get(nome, 0) + estimate_tokens(text)
+    righe = []
+    for nome, tok in token.items():
+        da = " + ".join(origini.get(nome, [])) or "-"
+        if nome == "indice memorie":
+            quante = len(memory_files(state.workdir))
+            da = f"{quante} memorie" if quante != 1 else "1 memoria"
+        righe.append((nome, tok, da))
+    return righe
+
+
+def cmd_context(state: SessionState, tools: list[Tool], arg: str = "") -> None:
+    """Riepilogo compatto della sessione. Con `files` elenca i percorsi per esteso."""
+    if arg.strip().lower() == "files":
+        cmd_context_files(state)
+        return
+
+    print(f"ernesto v{__version__} · {state.model.label} ({state.model.id}) · reasoning {state.reasoning_effort}")
+    print(f"  workdir  {state.workdir}")
+    print(f"  globale  {config_dir() / CONTEXT_DIR}")
+    if state.logger:
+        print(f"  log      {_short_path(state.logger.path, state)}")
+
+    righe = _context_rows(state)
+    larghezza = max((len(nome) for nome, _, _ in righe), default=10)
+    print(f"\n  {'contesto'.ljust(larghezza)}  token  da")
+    for nome, tok, da in righe:
+        print(f"  {nome.ljust(larghezza)}  {fmt_tokens(tok).rjust(5)}  {da}")
+    totale = sum(tok for _, tok, _ in righe)
+    print(f"  {'totale'.ljust(larghezza)}  {fmt_tokens(totale).rjust(5)}")
+
+    compattati = f" · {state.compacted_count} compattati" if state.compacted_count else ""
+    plurale = "messaggio" if len(state.messages) == 1 else "messaggi"
     print(
-        f"Compattazione: soglia ~{fmt_tokens(COMPACT_THRESHOLD_TOKENS)} tok · "
-        f"ultimi {COMPACT_KEEP_RECENT} giri integrali · risparmiati ~{fmt_tokens(state.compacted_tokens)} tok"
+        f"\n  storia     {len(state.messages)} {plurale} · ~{fmt_tokens(state.history_token_estimate())} tok"
+        f"{compattati} (soglia {fmt_tokens(COMPACT_THRESHOLD_TOKENS)} · {COMPACT_KEEP_RECENT} giri integrali)"
     )
     native = [t.name for t in tools if not t.name.startswith("mcp__")]
     mcp = [t.name for t in tools if t.name.startswith("mcp__")]
     if state.json_mode:
-        print("Strumenti: DISATTIVATI (JSON mode attivo)")
+        print("  strumenti  DISATTIVATI (JSON mode attivo)")
     else:
-        print(f"Strumenti nativi ({len(native)}): {', '.join(native)}")
+        elenco = ", ".join(native)
+        conteggio = f"{len(native)} nativi" + (f" + {len(mcp)} MCP" if mcp else "")
+        print(f"  strumenti  {conteggio}: {elenco}")
         if mcp:
-            print(f"Strumenti MCP ({len(mcp)}): {', '.join(mcp)}")
-    print(f"YOLO: {'attivo' if state.yolo else 'no'} · dry-run: {'attivo' if state.dry_run else 'no'}")
+            print(f"             MCP: {', '.join(mcp)}")
+    stato = f"YOLO {'si' if state.yolo else 'no'} · dry-run {'si' if state.dry_run else 'no'}"
+    print(f"  stato      {stato} · JSON mode {'si' if state.json_mode else 'no'}")
+    print("\n  /context files per i percorsi completi")
+
+
+def cmd_context_files(state: SessionState) -> None:
+    """Percorsi completi di tutti i file letti all'avvio, compresi quelli non trovati."""
+    print("File di contesto:")
+    for etichetta, cf in context_files(state.context):
+        if cf.origin == "duplicato":
+            nota = f"{cf.path}  (identico al globale: caricato una volta sola)"
+        else:
+            nota = str(cf.path) if cf.path else "(non trovato)"
+        print(f"  {etichetta.ljust(26)} {nota}")
+    print("Memorie:")
+    trovate = memory_files(state.workdir)
+    for percorso in trovate:
+        print(f"  {'persistente/sessione'.ljust(26)} {percorso}")
+    if state.context.session_memory:
+        corrente = state.workdir / state.context.session_memory
+        if corrente not in trovate:
+            print(f"  {'sessione (da creare)'.ljust(26)} {corrente}")
+    if not trovate and not state.context.session_memory:
+        print("  (nessuna)")
     if state.logger:
-        print(f"Log: {state.logger.path}")
+        print(f"Log:\n  {'sessione'.ljust(26)} {state.logger.path}")
+
+
+def cmd_command() -> None:
+    """Elenca i comandi disponibili con una descrizione breve."""
+    larghezza = max(len(nome) for nome, _ in COMMANDS)
+    print("Comandi disponibili:")
+    for nome, descrizione in COMMANDS:
+        print(f"  {nome.ljust(larghezza)}  {descrizione}")
+    print(f"  {'exit'.ljust(larghezza)}  Termina la sessione (anche `quit`)")
+    print("\nCtrl+C interrompe il turno in corso; al prompt esce.")
 
 
 def cmd_tools(tools: list[Tool]) -> None:
@@ -477,7 +613,9 @@ def handle_command(state: SessionState, user_input: str, tools: list[Tool], clie
     arg = arg.strip()
 
     if command == "/context":
-        cmd_context(state, tools)
+        cmd_context(state, tools, arg)
+    elif command == "/command":
+        cmd_command()
     elif command == "/clear":
         state.reset_messages()
         print("Conversazione azzerata (conteggi cumulativi e log mantenuti).")
@@ -672,10 +810,11 @@ def main(
         print(warning)
     print()
 
+    leggi = make_reader()
     while True:
         try:
             _prompt_rule()
-            user_input = input(prompt_indicator(state)).strip()
+            user_input = leggi(prompt_indicator(state)).strip()
         except (EOFError, KeyboardInterrupt):
             print("\nArrivederci!")
             break

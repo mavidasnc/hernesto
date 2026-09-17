@@ -54,9 +54,10 @@ conoscono la workdir della sandbox e i flag di sicurezza. Non esiste stato globa
 Il system prompt è composto da `ernesto/context.py` (`load_context` →
 `compose_system_prompt`): prompt di base + `soul.md` + `identity.md` + `credentials.md`,
 cercati in `context/` prima della workdir e poi di `~/.config/ernesto/` (costante
-`CONTEXT_DIR`), più l'**indice delle memorie**. `identity.md` è l'unico file che si somma
-invece di essere sostituito (`identity_base` dalla config dir più quello del progetto):
-serve perché le regole di base valgano anche in un progetto che ha il suo `identity.md`.
+`CONTEXT_DIR`), più l'**indice delle memorie**. Tutti e tre i file si sommano con la stessa
+regola (`_load_pair`): prima la copia globale, poi quella del progetto, così le regole di
+base valgono anche dove il progetto ha le sue. Due copie identiche, o la stessa cartella
+in entrambi i ruoli, vengono caricate una volta sola.
 I file versionati stanno in `context/` e si installano con `install-context.py`, che
 esclude dalla copia globale il blocco `solo-progetto` di `identity.md`; quando la workdir è
 questo repo, `project_only_section()` carica dal file locale solo quel blocco, evitando di
@@ -80,6 +81,14 @@ la lista attiva viene decisa. `tool_schemas()` converte i tool negli schema Open
 Gli strumenti MCP (opzionali, `ernesto/mcp_client.py`, config `context/mcp.json`) si aggiungono
 alla stessa lista con nome `mcp__<server>__<tool>`; se la libreria `mcp` o un server
 mancano, la sessione parte lo stesso con un avviso.
+
+## Interfaccia
+
+I comandi slash sono definiti **una volta sola** in `COMMANDS` (`cli.py`): da lì nascono il
+completamento del prompt, `/command` e l'aiuto, e un test verifica che l'elenco coincida con
+i rami di `handle_command`. Il prompt usa `prompt_toolkit` tramite `make_reader()`, che
+ricade su `input()` se il terminale non lo supporta: ogni nuova funzione del prompt deve
+restare dentro quel fallback.
 
 ## Invarianti da non violare
 

@@ -5,6 +5,20 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.5.0] - 2026-09-17
+
+### Aggiunto
+- **Completamento dei comandi**: digitando `/` compaiono tutti i comandi con la loro descrizione, si filtrano scrivendo e si scelgono con le frecce. Il prompt passa a `prompt_toolkit`, che porta anche storia e modifica della riga; se il terminale non lo supporta (git bash solleva `NoConsoleScreenBufferError`) si ricade su `input()` senza errori.
+- **Comando `/command`**: elenco dei comandi con una descrizione breve.
+- **`/context files`**: i percorsi completi di tutti i file letti all'avvio, memorie e log compresi, distinguendo «non trovato» da «identico al globale».
+- **Launcher `bin/ernesto.cmd` e `bin/ernesto`**: lanciano ernesto con il Python del `.venv` da qualunque cartella, senza percorsi assoluti cablati. La cartella di lavoro resta quella corrente, che e' la workdir dell'agente.
+
+### Cambiato
+- **Una sola regola di caricamento per tutti i file di contesto**: `soul.md`, `identity.md` e `credentials.md` sommano il file globale di `~/.config/ernesto/context/` e quello del progetto, nell'ordine. Prima solo `identity.md` si sommava e gli altri due venivano presi dal primo posto in cui comparivano, quindi un `soul.md` globale poteva essere ignorato senza che nulla lo dicesse. Per `soul.md` il frontmatter `mode: replace` vale se sta in una qualsiasi delle due posizioni; due file con contenuto identico vengono caricati una volta sola.
+- **`/context` compatto**: un blocco solo con modello, percorsi di base, tabella dei token per file con la provenienza, storia, strumenti e stato. Prima erano venti righe con il totale ripetuto tre volte e un percorso completo per riga.
+- **Il banner non elenca piu' i comandi**: al loro posto un rimando a `/command`. L'elenco veniva comunque troncato dal box.
+- I comandi sono definiti una volta sola in `COMMANDS` (`cli.py`), da cui nascono completamento, `/command` e aiuto; un test verifica che coincidano con i rami di `handle_command`.
+
 ## [0.4.0] - 2026-09-17
 
 ### Aggiunto

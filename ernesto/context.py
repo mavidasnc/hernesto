@@ -63,7 +63,7 @@ class ContextFile:
     name: str
     path: Path | None = None
     content: str | None = None
-    origin: str = "assente"  # "workdir" | "config" | "assente"
+    origin: str = "assente"  # "workdir" | "config" | "assente" | "duplicato"
 
 
 @dataclass
@@ -71,13 +71,15 @@ class Context:
     """I file di contesto caricati all'avvio."""
 
     workdir: Path
+    # Per ogni file di contesto ci sono due posizioni e si SOMMANO sempre: prima il file di
+    # ~/.config/ernesto/context/ (valido ovunque), poi quello del progetto, che specializza.
+    # Una regola sola per tutti e tre, altrimenti non si sa mai quali istruzioni sono attive.
     soul: ContextFile = field(default_factory=lambda: ContextFile("soul.md"))
+    soul_base: ContextFile = field(default_factory=lambda: ContextFile("soul.md"))
     identity: ContextFile = field(default_factory=lambda: ContextFile("identity.md"))
-    # Istruzioni di base da ~/.config/ernesto/context/identity.md: si SOMMANO a quelle del
-    # progetto invece di essere sostituite, altrimenti aprire un progetto con un suo
-    # identity.md farebbe sparire le regole generali.
     identity_base: ContextFile = field(default_factory=lambda: ContextFile("identity.md"))
     credentials: ContextFile = field(default_factory=lambda: ContextFile("credentials.md"))
+    credentials_base: ContextFile = field(default_factory=lambda: ContextFile("credentials.md"))
     soul_mode: str = "append"  # "append" | "replace"
     # Le memorie non sono file di contesto caricati: nel prompt entra solo il loro indice.
     memory_index: str = ""
@@ -95,18 +97,32 @@ def _read_file(name: str, base: Path, origin: str) -> ContextFile:
     return ContextFile(name)
 
 
-def _find_file(name: str, workdir: Path, workdir_only: bool = False) -> ContextFile:
-    """Cerca un file di contesto nella workdir poi in ~/.config/ernesto/: vince il primo.
+def _load_pair(name: str, workdir: Path) -> tuple[ContextFile, ContextFile]:
+    """Carica un file di contesto dalle due posizioni: (globale, progetto).
 
-    Con workdir_only la ricerca si ferma alla cartella di lavoro: e' il caso delle memorie,
-    che sono per progetto e non devono rientrare da ~/.config in ogni altro progetto.
+    Le due parti si sommano. Due casi particolari, gia' necessari per identity.md e ora
+    validi per tutti i file:
+    - workdir e cartella globale coincidono, o i due file hanno lo stesso contenuto: si
+      conta una copia sola;
+    - il file di progetto e' la sorgente stessa del globale (contiene i marcatori
+      `solo-progetto`): dal locale si prende solo quel blocco, altrimenti il generale
+      entrerebbe due volte nel prompt.
     """
-    bases = ((workdir, "workdir"),) if workdir_only else ((workdir, "workdir"), (config_dir(), "config"))
-    for base, origin in bases:
-        found = _read_file(name, base, origin)
-        if found.content is not None:
-            return found
-    return ContextFile(name)
+    base = _read_file(name, config_dir(), "config")
+    progetto = _read_file(name, workdir, "workdir")
+    if progetto.path is not None and progetto.path == base.path:
+        return ContextFile(name, base.path, None, "duplicato"), progetto
+    if base.content is not None and base.content == progetto.content:
+        # Stesso contenuto nelle due posizioni (tipico del repo che e' anche la sorgente
+        # del globale): si tiene una copia sola, altrimenti il prompt la ripete. Il percorso
+        # resta, con origine "duplicato": in /context files "identico al globale" e'
+        # un'informazione diversa da "non trovato".
+        return base, ContextFile(name, progetto.path, None, "duplicato")
+    if base.content and progetto.content:
+        solo_progetto = project_only_section(progetto.content)
+        if solo_progetto is not None:
+            progetto.content = solo_progetto
+    return base, progetto
 
 
 def project_only_section(content: str) -> str | None:
@@ -154,24 +170,17 @@ def load_context(workdir: Path, session_memory: str | None = None) -> Context:
     Le memorie non vengono caricate: entra nel prompt solo il loro indice.
     """
     ctx = Context(workdir=workdir)
-    ctx.soul = _find_file("soul.md", workdir)
-    # identity.md e' l'unico file che si somma: le istruzioni di base valgono ovunque, quelle
-    # del progetto si aggiungono. Se workdir e config dir coincidono, si carica una volta.
-    ctx.identity_base = _read_file("identity.md", config_dir(), "config")
-    ctx.identity = _read_file("identity.md", workdir, "workdir")
-    if ctx.identity.path is not None and ctx.identity.path == ctx.identity_base.path:
-        ctx.identity_base = ContextFile("identity.md")
-    elif ctx.identity_base.content and ctx.identity.content:
-        # Il file di progetto puo' essere la sorgente stessa delle istruzioni globali: in
-        # quel caso se ne prende solo la parte marcata, altrimenti il generale entra due volte.
-        solo_progetto = project_only_section(ctx.identity.content)
-        if solo_progetto is not None:
-            ctx.identity.content = solo_progetto
-    ctx.credentials = _find_file("credentials.md", workdir)
+    ctx.soul_base, ctx.soul = _load_pair("soul.md", workdir)
+    ctx.identity_base, ctx.identity = _load_pair("identity.md", workdir)
+    ctx.credentials_base, ctx.credentials = _load_pair("credentials.md", workdir)
     ctx.session_memory = session_memory
     ctx.memory_index = memory_index(workdir, session_memory)
-    if ctx.soul.content is not None:
-        ctx.soul.content, ctx.soul_mode = parse_soul(ctx.soul.content)
+    # Il frontmatter `mode: replace` vale se sta in una qualsiasi delle due posizioni.
+    for soul in (ctx.soul_base, ctx.soul):
+        if soul.content is not None:
+            soul.content, mode = parse_soul(soul.content)
+            if mode == "replace":
+                ctx.soul_mode = "replace"
     return ctx
 
 
@@ -248,40 +257,43 @@ def reload_memory(ctx: Context) -> bool:
     return ctx.memory_index != before
 
 
-def context_files(ctx: Context) -> list[tuple[str, Path | None]]:
-    """I file di contesto e la loro posizione effettiva, per mostrarli in /context.
+def context_files(ctx: Context) -> list[tuple[str, ContextFile]]:
+    """I file di contesto con la loro posizione effettiva, per /context.
 
-    Un percorso None significa che il file non e' stato trovato: e' informazione utile
-    quanto il percorso, perche' dice all'utente che quel pezzo di contesto non c'e'.
+    Un percorso assente e' informazione utile quanto uno presente: dice che quel pezzo di
+    contesto non c'e'.
     """
     return [
-        ("soul.md", ctx.soul.path),
-        ("identity.md (base)", ctx.identity_base.path),
-        ("identity.md (progetto)", ctx.identity.path),
-        ("credentials.md", ctx.credentials.path),
+        ("soul.md (base)", ctx.soul_base),
+        ("soul.md (progetto)", ctx.soul),
+        ("identity.md (base)", ctx.identity_base),
+        ("identity.md (progetto)", ctx.identity),
+        ("credentials.md (base)", ctx.credentials_base),
+        ("credentials.md (progetto)", ctx.credentials),
     ]
 
 
 def summary_line(ctx: Context) -> str:
-    """Riga di riepilogo, es. `Contesto: soul.md ✓ · identity.md ✓✓ · credentials.md ✗ · memorie: 2`."""
+    """Riga di riepilogo, es. `Contesto: soul.md 1 · identity.md 2 · credentials.md 1 · memorie: 2`."""
 
-    def mark(cf: ContextFile) -> str:
-        return f"{cf.name} {'✓' if cf.content is not None else '✗'}"
+    def mark(base: ContextFile, progetto: ContextFile) -> str:
+        quanti = sum(1 for cf in (base, progetto) if cf.content)
+        return f"{base.name} {quanti if quanti else '✗'}"
 
-    memorie = len(memory_files(ctx.workdir))
-    identity = "identity.md " + ("✓✓" if ctx.identity.content and ctx.identity_base.content else
-                                 "✓" if ctx.identity.content or ctx.identity_base.content else "✗")
-    return f"Contesto: {mark(ctx.soul)} · {identity} · {mark(ctx.credentials)} · memorie: {memorie}"
+    return (
+        f"Contesto: {mark(ctx.soul_base, ctx.soul)} · {mark(ctx.identity_base, ctx.identity)} · "
+        f"{mark(ctx.credentials_base, ctx.credentials)} · memorie: {len(memory_files(ctx.workdir))}"
+    )
 
 
 def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str, str]]:
     """Le parti del system prompt con etichetta di provenienza (per /context)."""
     parts: list[tuple[str, str]] = []
-    if ctx.soul.content and ctx.soul_mode == "replace":
-        parts.append(("soul.md (mode: replace)", ctx.soul.content))
-    else:
-        if ctx.soul.content:
-            parts.append(("soul.md", ctx.soul.content))
+    for cf, etichetta in ((ctx.soul_base, "soul.md (base)"), (ctx.soul, "soul.md (progetto)")):
+        if cf.content:
+            parts.append((etichetta, cf.content))
+    # Con `mode: replace` in una qualsiasi delle due posizioni il prompt di default sparisce
+    if ctx.soul_mode != "replace":
         parts.append(("prompt di default", f"{BASE_SYSTEM_PROMPT}\n\n{AGENT_SYSTEM_PROMPT}"))
     if ctx.identity_base.content:
         parts.append(("identity.md (base)",
@@ -291,9 +303,10 @@ def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str
                       f"## Istruzioni operative del progetto\n\n{ctx.identity.content}"))
     if ctx.memory_index:
         parts.append(("indice memorie", ctx.memory_index))
-    if ctx.credentials.content:
-        parts.append(("credentials.md",
-                      f"## Credenziali del progetto\n\n{ctx.credentials.content}"))
+    for cf, etichetta in ((ctx.credentials_base, "credentials.md (base)"),
+                          (ctx.credentials, "credentials.md (progetto)")):
+        if cf.content:
+            parts.append((etichetta, f"## Credenziali\n\n{cf.content}"))
     if json_mode:
         parts.append(("JSON mode", JSON_MODE_SUFFIX.strip()))
     return parts

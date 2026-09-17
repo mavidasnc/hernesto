@@ -66,7 +66,7 @@ def test_context_files_present(workdir: Path) -> None:
     (_ctx(workdir) / "identity.md").write_text("Usa sempre pytest.", encoding="utf-8")
     (_ctx(workdir) / "credentials.md").write_text(CREDENTIALS_SAMPLE, encoding="utf-8")
     ctx = load_context(workdir)
-    assert summary_line(ctx) == "Contesto: soul.md ✓ · identity.md ✓ · credentials.md ✓ · memorie: 0"
+    assert summary_line(ctx) == "Contesto: soul.md 1 · identity.md 1 · credentials.md 1 · memorie: 0"
     prompt = compose_system_prompt(ctx)
     assert "Sei allegro." in prompt
     assert "## Istruzioni operative del progetto" in prompt
@@ -279,3 +279,52 @@ def test_senza_blocco_il_file_di_progetto_entra_intero(
     prompt = compose_system_prompt(load_context(workdir))
     assert "Regole generali." in prompt
     assert "Comandi di questo progetto: npm test." in prompt
+
+
+@pytest.mark.parametrize("nome", ["soul.md", "identity.md", "credentials.md"])
+def test_tutti_i_file_sommano_base_e_progetto(
+    nome: str, workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La regola e' una sola per tutti: prima il globale, poi il progetto."""
+    fake_config = tmp_path / "config-home"
+    (fake_config / CONTEXT_DIR).mkdir(parents=True)
+    (fake_config / CONTEXT_DIR / nome).write_text(f"Globale di {nome}.", encoding="utf-8")
+    (_ctx(workdir) / nome).write_text(f"Progetto di {nome}.", encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    prompt = compose_system_prompt(load_context(workdir))
+    assert f"Globale di {nome}." in prompt
+    assert f"Progetto di {nome}." in prompt
+    assert prompt.index(f"Globale di {nome}.") < prompt.index(f"Progetto di {nome}.")
+
+
+def test_soul_replace_da_una_sola_posizione(
+    workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`mode: replace` in una qualsiasi delle due posizioni toglie il prompt di default."""
+    fake_config = tmp_path / "config-home"
+    (fake_config / CONTEXT_DIR).mkdir(parents=True)
+    (fake_config / CONTEXT_DIR / "soul.md").write_text("Base senza frontmatter.", encoding="utf-8")
+    (_ctx(workdir) / "soul.md").write_text("---\nmode: replace\n---\nSolo questo.", encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    prompt = compose_system_prompt(load_context(workdir))
+    assert "Base senza frontmatter." in prompt
+    assert "Solo questo." in prompt
+    assert AGENT_SYSTEM_PROMPT not in prompt
+    assert "mode: replace" not in prompt  # il frontmatter non finisce nel contesto
+
+
+def test_file_identico_nelle_due_posizioni_conta_una_volta(
+    workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un file di progetto identico al globale non raddoppia il prompt."""
+    fake_config = tmp_path / "config-home"
+    (fake_config / CONTEXT_DIR).mkdir(parents=True)
+    testo = "Regole identiche nelle due posizioni."
+    (fake_config / CONTEXT_DIR / "soul.md").write_text(testo, encoding="utf-8")
+    (_ctx(workdir) / "soul.md").write_text(testo, encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    ctx = load_context(workdir)
+    assert compose_system_prompt(ctx).count(testo) == 1
+    # il percorso resta noto: "identico al globale" non e' "non trovato"
+    assert ctx.soul.origin == "duplicato"
+    assert ctx.soul.path is not None
