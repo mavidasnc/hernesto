@@ -1,8 +1,10 @@
-"""Caricamento dei file di contesto (soul.md / agent.md / memory.md / credentials.md).
+"""Contesto del modello: file di istruzioni (soul.md / agent.md / credentials.md) e
+indice delle memorie.
 
-Per ciascun file: cerca prima nella cartella di lavoro, poi in ~/.config/ernesto/.
-memory.md fa eccezione ed e' cercata solo nella workdir: e' la memoria di lavoro del
-singolo progetto, scritta dall'agente stesso, e non deve rientrare altrove.
+I file di contesto vengono cercati nella cartella di lavoro e poi in ~/.config/ernesto/.
+Le memorie (memory.md persistente e memories/memory-<ts>.md di sessione) sono invece solo
+della cartella di lavoro e NON vengono caricate nel prompt: entra l'indice, il contenuto
+si legge con read_file quando il modello decide che serve.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import MEMORY_LIMIT, config_dir
+from .config import MEMORY_DIR, MEMORY_INDEX_LIMIT, config_dir
 
 BASE_SYSTEM_PROMPT = (
     "Sei un assistente utile e conciso. "
@@ -31,9 +33,9 @@ AGENT_SYSTEM_PROMPT = (
     "Consulta `credentials.md` per sapere quali credenziali sono disponibili e come usarle: "
     "i valori stanno nelle variabili d'ambiente, non stamparli mai. "
     "Riassumi a fine task i file toccati e le azioni eseguite. "
-    "Mantieni `memory.md` nella cartella di lavoro con i fatti durevoli e le decisioni prese "
-    "(non il trascritto della conversazione): aggiornalo con `edit_file` quando emerge qualcosa "
-    "che servira' anche nelle sessioni future, e tienilo sotto le 4000 battute potando cio' che non serve piu'."
+    "Hai due memorie su file, elencate piu' sotto: una persistente per il progetto e una della "
+    "sessione corrente. Non sono nel contesto: leggile con `read_file` solo quando ti servono "
+    "davvero, e aggiornale mentre lavori tenendole brevi e potate."
 )
 
 JSON_MODE_SUFFIX = " Rispondi SEMPRE con JSON valido. Nessun testo al di fuori del JSON."
@@ -65,8 +67,10 @@ class Context:
     soul: ContextFile = field(default_factory=lambda: ContextFile("soul.md"))
     agent: ContextFile = field(default_factory=lambda: ContextFile("agent.md"))
     credentials: ContextFile = field(default_factory=lambda: ContextFile("credentials.md"))
-    memory: ContextFile = field(default_factory=lambda: ContextFile("memory.md"))
     soul_mode: str = "append"  # "append" | "replace"
+    # Le memorie non sono file di contesto caricati: nel prompt entra solo il loro indice.
+    memory_index: str = ""
+    session_memory: str | None = None  # es. "memories/memory-20260917_094311.md"
 
 
 def _find_file(name: str, workdir: Path, workdir_only: bool = False) -> ContextFile:
@@ -112,34 +116,92 @@ def parse_soul(content: str) -> tuple[str, str]:
     return content, mode
 
 
-def load_context(workdir: Path) -> Context:
-    """Carica soul.md, agent.md, credentials.md (workdir, poi ~/.config/) e memory.md."""
+def load_context(workdir: Path, session_memory: str | None = None) -> Context:
+    """Carica i file di contesto e costruisce l'indice delle memorie.
+
+    soul.md / agent.md / credentials.md: workdir, poi ~/.config/ernesto/.
+    Le memorie non vengono caricate: entra nel prompt solo il loro indice.
+    """
     ctx = Context(workdir=workdir)
     ctx.soul = _find_file("soul.md", workdir)
     ctx.agent = _find_file("agent.md", workdir)
     ctx.credentials = _find_file("credentials.md", workdir)
-    ctx.memory = _find_file("memory.md", workdir, workdir_only=True)
+    ctx.session_memory = session_memory
+    ctx.memory_index = memory_index(workdir, session_memory)
     if ctx.soul.content is not None:
         ctx.soul.content, ctx.soul_mode = parse_soul(ctx.soul.content)
     return ctx
 
 
-def _capped_memory(content: str) -> str:
-    """Tronca la memoria al tetto: il system prompt viaggia in ogni richiesta di ogni step."""
-    if len(content) <= MEMORY_LIMIT:
-        return content
-    return content[:MEMORY_LIMIT] + f"\n…[memoria troncata a {MEMORY_LIMIT} caratteri: potala con edit_file]"
+def _first_line(path: Path, limit: int = 80) -> str:
+    """Prima riga non vuota di un file, troncata: serve a dare un'idea del contenuto."""
+    try:
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                stripped = line.strip().lstrip("#").strip()
+                if stripped:
+                    return stripped[:limit]
+    except OSError:
+        pass
+    return "(vuota)"
+
+
+def memory_files(workdir: Path, limit: int = MEMORY_INDEX_LIMIT) -> list[Path]:
+    """memory.md piu' le memorie di sessione in memories/, dalla piu' recente."""
+    files: list[Path] = []
+    persistent = workdir / "memory.md"
+    if persistent.is_file():
+        files.append(persistent)
+    memories_dir = workdir / MEMORY_DIR
+    if memories_dir.is_dir():
+        sessions = sorted(memories_dir.glob("memory-*.md"), key=lambda p: p.name, reverse=True)
+        files.extend(sessions[:limit])
+    return files
+
+
+def memory_index(workdir: Path, session_file: str | None = None) -> str:
+    """Indice delle memorie da mettere nel system prompt.
+
+    Solo nomi, dimensioni e prima riga: il contenuto NON entra nel prompt, perche' il
+    prompt viaggia in ogni richiesta di ogni step e la maggior parte delle volte la
+    memoria non serve. Il modello la legge con read_file quando decide che gli serve.
+    """
+    righe = [
+        "## Memorie disponibili",
+        "",
+        "Non sono caricate nel contesto: leggile con `read_file` SOLO quando ti servono "
+        "per capire il contesto o riprendere un lavoro.",
+        "- `memory.md`: memoria persistente del progetto (fatti durevoli, preferenze, decisioni). "
+        "Aggiornala con `edit_file` quando emerge qualcosa che varra' anche nelle sessioni future.",
+    ]
+    if session_file:
+        righe.append(
+            f"- `{session_file}`: memoria di QUESTA sessione (stato del lavoro in corso, esiti "
+            f"intermedi, cosa resta da fare). Creala con `write_file` e aggiornala mentre lavori."
+        )
+    trovate = memory_files(workdir)
+    if trovate:
+        righe.append("")
+        righe.append("Gia' presenti nella cartella di lavoro:")
+        for path in trovate:
+            rel = path.relative_to(workdir).as_posix()
+            size = path.stat().st_size if path.is_file() else 0
+            righe.append(f"  - `{rel}` ({size} byte) — {_first_line(path)}")
+    else:
+        righe.append("")
+        righe.append("Nessun file di memoria presente al momento.")
+    return "\n".join(righe)
 
 
 def reload_memory(ctx: Context) -> bool:
-    """Ricarica memory.md dalla workdir. True se il contenuto e' cambiato.
+    """Ricalcola l'indice delle memorie. True se e' cambiato rispetto a prima.
 
-    Serve perche' l'agente scrive memory.md durante la sessione: senza rilettura il
-    system prompt resterebbe quello composto all'avvio fino al prossimo /clear.
+    Serve perche' l'agente crea e aggiorna i file di memoria durante la sessione: senza
+    ricalcolo il system prompt resterebbe quello composto all'avvio fino al prossimo /clear.
     """
-    before = ctx.memory.content
-    ctx.memory = _find_file("memory.md", ctx.workdir, workdir_only=True)
-    return ctx.memory.content != before
+    before = ctx.memory_index
+    ctx.memory_index = memory_index(ctx.workdir, ctx.session_memory)
+    return ctx.memory_index != before
 
 
 def summary_line(ctx: Context) -> str:
@@ -148,7 +210,11 @@ def summary_line(ctx: Context) -> str:
     def mark(cf: ContextFile) -> str:
         return f"{cf.name} {'✓' if cf.content is not None else '✗'}"
 
-    return f"Contesto: {mark(ctx.soul)} · {mark(ctx.agent)} · {mark(ctx.credentials)} · {mark(ctx.memory)}"
+    memorie = len(memory_files(ctx.workdir))
+    return (
+        f"Contesto: {mark(ctx.soul)} · {mark(ctx.agent)} · {mark(ctx.credentials)} · "
+        f"memorie: {memorie}"
+    )
 
 
 def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str, str]]:
@@ -164,9 +230,8 @@ def system_prompt_parts(ctx: Context, json_mode: bool = False) -> list[tuple[str
     if ctx.agent.content:
         parts.append((f"agent.md ({ctx.agent.path or ctx.agent.name})",
                       f"## Istruzioni operative del progetto\n\n{ctx.agent.content}"))
-    if ctx.memory.content:
-        parts.append((f"memory.md ({ctx.memory.path or ctx.memory.name})",
-                      f"## Memoria di lavoro\n\n{_capped_memory(ctx.memory.content)}"))
+    if ctx.memory_index:
+        parts.append(("indice memorie", ctx.memory_index))
     if ctx.credentials.content:
         parts.append((f"credentials.md ({ctx.credentials.path or ctx.credentials.name})",
                       f"## Credenziali del progetto\n\n{ctx.credentials.content}"))

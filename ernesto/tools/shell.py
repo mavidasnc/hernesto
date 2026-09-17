@@ -9,7 +9,7 @@ import subprocess
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..config import STDERR_OUTPUT_LIMIT, TOOL_OUTPUT_LIMIT, load_deny_patterns
-from . import ConfirmFn, Tool
+from . import LEVEL_DESTRUCTIVE, LEVEL_WARNING, ConfirmFn, Tool
 
 if TYPE_CHECKING:
     from ..session import SessionState
@@ -24,11 +24,21 @@ _ESCAPE_PATTERNS = [
 ]
 
 
+def normalize_command(command: str) -> str:
+    """Forma normalizzata per il confronto con la denylist: minuscole, spazi collassati."""
+    return re.sub(r"\s+", " ", command.strip().lower())
+
+
 def find_deny_match(command: str, patterns: list[str]) -> str | None:
-    """Restituisce il primo pattern della denylist che matcha il comando, o None."""
+    """Restituisce il primo pattern della denylist che matcha il comando, o None.
+
+    Il confronto avviene sulla forma normalizzata e senza distinzione di maiuscole, cosi'
+    "RM  -RF" e "rm -r -f" non scivolano via per una differenza di forma.
+    """
+    normalized = normalize_command(command)
     for pattern in patterns:
         try:
-            if re.search(pattern, command):
+            if re.search(pattern, normalized, re.IGNORECASE):
                 return pattern
         except re.error:
             continue  # pattern malformato in config.yaml: ignorato
@@ -120,6 +130,7 @@ class RunCommandTool(Tool):
             ok = self._confirm(
                 f"Il comando matcha un pattern pericoloso ({matched!r}). Eseguire comunque?",
                 preview=command,
+                level=LEVEL_DESTRUCTIVE,
             )
             if not ok:
                 return "ERRORE: comando rifiutato dall'utente (denylist di sicurezza)"
@@ -128,6 +139,7 @@ class RunCommandTool(Tool):
             ok = self._confirm(
                 f"Il comando cita un percorso fuori dalla cartella di lavoro ({escaping!r}). Eseguire comunque?",
                 preview=command,
+                level=LEVEL_WARNING,
             )
             if not ok:
                 return (

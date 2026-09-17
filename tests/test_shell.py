@@ -9,7 +9,7 @@ import pytest
 
 from ernesto.config import DEFAULT_DENY_PATTERNS, STDERR_OUTPUT_LIMIT, TOOL_OUTPUT_LIMIT
 from ernesto.session import SessionState
-from ernesto.tools import ConfirmFn
+from ernesto.tools import LEVEL_DESTRUCTIVE, LEVEL_WARNING, ConfirmFn
 from ernesto.tools.shell import RunCommandTool, find_deny_match, find_escaping_path
 
 
@@ -17,7 +17,7 @@ def _make_tool(
     state: SessionState,
     confirm_fn: ConfirmFn | None = None,
 ) -> RunCommandTool:
-    return RunCommandTool(state, confirm_fn or (lambda message, preview=None: False))
+    return RunCommandTool(state, confirm_fn or (lambda message, preview=None, level='': False))
 
 
 def _proc(stdout: str = "", returncode: int = 0, stderr: str = "") -> MagicMock:
@@ -91,7 +91,7 @@ def test_denylist_refused_without_confirm(mock_popen: MagicMock, state: SessionS
 def test_denylist_executed_with_confirm(mock_popen: MagicMock, state: SessionState) -> None:
     """Un comando in denylist con conferma positiva viene eseguito."""
     mock_popen.return_value = _proc(stdout="ok")
-    tool = _make_tool(state, confirm_fn=lambda message, preview=None: True)
+    tool = _make_tool(state, confirm_fn=lambda message, preview=None, level='': True)
     result = tool.run(command="sudo ls")
     assert result.startswith("exit 0")
     mock_popen.assert_called_once()
@@ -104,7 +104,7 @@ def test_denylist_skipped_with_yolo(mock_popen: MagicMock, state: SessionState) 
     state.yolo = True
     calls: list[str] = []
 
-    def confirm(message: str, preview: str | None = None) -> bool:
+    def confirm(message: str, preview: str | None = None, level: str = '') -> bool:
         calls.append(message)
         return False
 
@@ -190,3 +190,44 @@ def test_guardia_riconosce_i_frammenti_attesi() -> None:
     assert find_escaping_path("cp dati.csv ../fuori/") is not None
     assert find_escaping_path("pytest tests/ -q") is None
     assert find_escaping_path("npm run build") is None
+
+
+def test_denylist_varianti_di_forma() -> None:
+    """Le varianti che prima sfuggivano ora vengono intercettate."""
+    for comando in (
+        "rm -r -f build",
+        "rm --recursive --force build",
+        "RM -RF build",
+        "rm  -rf   build",
+        "rm -fr build",
+        "git -C . push origin main",
+        "GIT PUSH",
+    ):
+        assert find_deny_match(comando, DEFAULT_DENY_PATTERNS) is not None, comando
+
+
+def test_denylist_nessun_falso_positivo() -> None:
+    """I comandi innocui restano fuori dalla denylist."""
+    for comando in (
+        "pytest -q",
+        "npm run build",
+        "git status",
+        "git log --oneline -5",
+        "python -c \"print('rm')\"",
+        "grep -rf pattern.txt src/",  # -rf di grep: legge i pattern da file, non cancella
+    ):
+        assert find_deny_match(comando, DEFAULT_DENY_PATTERNS) is None, comando
+
+
+def test_livelli_di_conferma_passati_al_callback(state: SessionState) -> None:
+    """Denylist e guardia sui percorsi arrivano con livelli di gravita' diversi."""
+    livelli: list[str] = []
+
+    def confirm(message: str, preview: str | None = None, level: str = "") -> bool:
+        livelli.append(level)
+        return False
+
+    tool = _make_tool(state, confirm_fn=confirm)
+    tool.run(command="rm -rf build")
+    tool.run(command="cat /etc/passwd")
+    assert livelli == [LEVEL_DESTRUCTIVE, LEVEL_WARNING]

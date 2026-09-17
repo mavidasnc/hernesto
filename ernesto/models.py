@@ -38,8 +38,9 @@ MODELS: list[ModelConfig] = [
     ModelConfig("MiniMax M3",         "minimax/minimax-m3",         json_supported=True,  schema_supported=False),
 ]
 
-# Modello selezionato all'avvio (indice 0 = Gemma free)
-DEFAULT_MODEL = MODELS[0]
+# Modello selezionato all'avvio quando config.yaml non dice altro (chiave model.default).
+DEFAULT_MODEL_ID = "qwen/qwen3.8-27b"
+DEFAULT_MODEL = next((m for m in MODELS if m.id == DEFAULT_MODEL_ID), MODELS[0])
 
 
 def find_model(model_id: str) -> ModelConfig | None:

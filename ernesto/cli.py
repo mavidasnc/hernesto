@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +17,15 @@ from openai import OpenAI
 
 from . import __version__
 from .agent import run_turn
-from .config import COMPACT_KEEP_RECENT, COMPACT_THRESHOLD_TOKENS, OPENROUTER_BASE, load_env_file
+from .config import (
+    COMPACT_KEEP_RECENT,
+    COMPACT_SUMMARY_MODEL,
+    COMPACT_THRESHOLD_TOKENS,
+    MEMORY_DIR,
+    OPENROUTER_BASE,
+    config_section,
+    load_env_file,
+)
 from .context import (
     Context,
     extract_env_vars,
@@ -34,8 +44,18 @@ from .session import (
     fmt_cost,
     fmt_tokens,
     prompt_indicator,
+    session_snapshot,
+    summarize_with_llm,
+    validate_snapshot,
 )
-from .tools import ConfirmFn, Tool, build_native_tools
+from .tools import (
+    LEVEL_DESTRUCTIVE,
+    LEVEL_EXTERNAL,
+    LEVEL_WARNING,
+    ConfirmFn,
+    Tool,
+    build_native_tools,
+)
 
 REASONING_LEVELS = ("low", "medium", "high", "xhigh")
 
@@ -59,7 +79,7 @@ CREDENTIALS_TEMPLATE = """# Credenziali — progetto
 
 COMANDI = (
     "/context · /clear · /compact · /model · /tools · /reasoning · /yolo · /log · /cost · "
-    "/save · exit/quit · Ctrl+C interrompe il turno (al prompt: esce)"
+    "/save · /load · exit/quit · Ctrl+C interrompe il turno (al prompt: esce)"
 )
 
 
@@ -116,12 +136,29 @@ def _prompt_rule() -> None:
         print("\033[2m" + "─" * width + "\033[0m")
 
 
+# Etichette delle conferme per livello di gravita': solo ASCII, perche' la resa dei simboli
+# non e' garantita su tutti i terminali. Il colore segue la convenzione del banner: si
+# applica solo quando stdout e' un terminale.
+LEVEL_BADGES: dict[str, tuple[str, str]] = {
+    LEVEL_DESTRUCTIVE: ("[!] DISTRUTTIVO", "31"),  # rosso
+    LEVEL_EXTERNAL: ("[>] ESTERNO", "33"),         # giallo
+    LEVEL_WARNING: ("[?] ATTENZIONE", "36"),       # ciano, come il banner
+}
+
+
+def _badge(level: str) -> str:
+    """Etichetta colorata del livello di conferma (senza colore fuori dal terminale)."""
+    label, color = LEVEL_BADGES.get(level, ("[ ] CONFERMA", "36"))
+    return f"\033[{color}m{label}\033[0m" if sys.stdout.isatty() else label
+
+
 def make_confirm_fn(state: SessionState) -> ConfirmFn:
     """Callback di conferma: questionary se TTY; se stdin non e' un TTY, default False."""
 
-    def confirm(message: str, preview: str | None = None) -> bool:
+    def confirm(message: str, preview: str | None = None, level: str = LEVEL_WARNING) -> bool:
         if state.yolo:
             return True
+        print(f"\n{_badge(level)} {message}")
         if preview:
             print(f"---\n{preview}\n---")
         if not sys.stdin.isatty():
@@ -221,7 +258,85 @@ def cmd_save(state: SessionState) -> None:
         lines.append(str(msg.get("content") or ""))
         lines.append("")
     filepath.write_text("\n".join(lines), encoding="utf-8")
+    # Il .txt e' per leggere, il .json e' per ricaricare: il testo perde tool_calls e
+    # tool_call_id, quindi da solo non basta a riprendere la conversazione con /load.
+    jsonpath = filepath.with_suffix(".json")
+    jsonpath.write_text(
+        json.dumps(session_snapshot(state), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     print(f"Salvato: {filepath}")
+    print(f"         {jsonpath} (ricaricabile con /load)")
+
+
+def _saves(state: SessionState) -> list[Path]:
+    """Salvataggi ricaricabili, dal piu' recente."""
+    saves_dir = state.workdir / "saves"
+    if not saves_dir.is_dir():
+        return []
+    return sorted(saves_dir.glob("*.json"), key=lambda p: p.name, reverse=True)
+
+
+def _pick_save(saves: list[Path]) -> Path | None:
+    """Menu di scelta del salvataggio (questionary se TTY, numerico altrimenti)."""
+    choices = [f"{p.name}" for p in saves]
+    if sys.stdin.isatty():
+        picked = questionary.select("Quale sessione riprendere?", choices=choices).ask()
+        return saves[choices.index(picked)] if picked in choices else None
+    print()
+    for i, choice in enumerate(choices, 1):
+        print(f"  [{i}] {choice}")
+    raw = input("\nNumero sessione (Invio per annullare): ").strip()
+    if not raw.isdigit() or not (1 <= int(raw) <= len(saves)):
+        return None
+    return saves[int(raw) - 1]
+
+
+def cmd_load(state: SessionState, arg: str) -> None:
+    """Riprende una sessione salvata: /load [nome file] (senza argomento apre l'elenco)."""
+    saves = _saves(state)
+    if not saves:
+        print("Nessuna sessione salvata in saves/ (usa /save per crearne una).")
+        return
+    if arg:
+        target = next((p for p in saves if arg in p.name), None)
+        if target is None:
+            print(f"Nessun salvataggio corrisponde a '{arg}'. Usa /load senza argomenti per l'elenco.")
+            return
+    else:
+        target = _pick_save(saves)
+        if target is None:
+            print("Annullato.")
+            return
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Errore nella lettura di {target.name}: {exc}")
+        return
+    problema = validate_snapshot(data)
+    if problema is not None:
+        print(f"Salvataggio non valido ({target.name}): {problema}. Conversazione invariata.")
+        return
+
+    salvato = data.get("modello")
+    if salvato and salvato != state.model.id:
+        found = find_model(str(salvato))
+        if found is None:
+            print(f"[Avviso] la sessione usava '{salvato}', non nel registry: resto su {state.model.label}.")
+        else:
+            state.model = found
+            state.json_mode = bool(data.get("json_mode", False))
+            print(f"Modello riportato a {found.label}.")
+    # Il system prompt resta quello di oggi: istruzioni e indice delle memorie aggiornati
+    ripristinati = [m for m in data["messaggi"] if m.get("role") != "system"]
+    state.messages = [{"role": "system", "content": state.system_prompt()}, *ripristinati]
+    if state.logger:
+        state.logger.log("load", file=target.name, messages=len(ripristinati))
+    print(
+        f"Ripresa da {target.name}: {len(ripristinati)} messaggi in storia "
+        f"(~{fmt_tokens(state.history_token_estimate())} tok stimati)."
+    )
+    print("I costi cumulativi restano quelli di questa sessione: la spesa precedente e' nel salvataggio.")
 
 
 def cmd_context(state: SessionState, tools: list[Tool]) -> None:
@@ -278,15 +393,39 @@ def cmd_log(state: SessionState) -> None:
     )
 
 
-def cmd_compact(state: SessionState, arg: str) -> None:
-    """Compatta subito i risultati strumento in storia (arg: giri da preservare, default 1)."""
+def summary_model_id(workdir: Path) -> str:
+    """Modello usato per il riassunto LLM (config.yaml: compact.summary_model)."""
+    return str(config_section(workdir, "compact").get("summary_model") or COMPACT_SUMMARY_MODEL)
+
+
+def make_summarizer(state: SessionState, client: OpenAI) -> Callable[[str, str], str | None]:
+    """Chiusura che riassume un risultato strumento con il modello configurato."""
+    model_id = summary_model_id(state.workdir)
+
+    def summarize(content: str, name: str) -> str | None:
+        return summarize_with_llm(client, model_id, content, name)
+
+    return summarize
+
+
+def cmd_compact(state: SessionState, arg: str, client: OpenAI) -> None:
+    """Compatta i risultati strumento: /compact [llm] [giri da preservare]."""
+    parti = arg.split()
+    usa_llm = bool(parti) and parti[0].lower() == "llm"
+    if usa_llm:
+        parti = parti[1:]
     keep = 1  # chi digita /compact vuole risparmiare adesso, non fra tre giri
-    if arg:
-        if not arg.isdigit():
-            print(f"Argomento non valido: '{arg}'. Uso: /compact [giri da preservare]")
+    if parti:
+        if not parti[0].isdigit():
+            print(f"Argomento non valido: '{parti[0]}'. Uso: /compact [llm] [giri da preservare]")
             return
-        keep = int(arg)
-    compacted, saved = compact_tool_results(state.messages, keep_recent=keep)
+        keep = int(parti[0])
+    summarizer = None
+    if usa_llm:
+        model_id = summary_model_id(state.workdir)
+        print(f"Riassunto generato da {model_id} (una chiamata per ogni risultato compattato).")
+        summarizer = make_summarizer(state, client)
+    compacted, saved = compact_tool_results(state.messages, keep_recent=keep, summarizer=summarizer)
     if not compacted:
         print("Niente da compattare.")
         return
@@ -321,7 +460,7 @@ def cmd_reasoning(state: SessionState, arg: str) -> None:
     print(f"Reasoning effort impostato a: {arg}")
 
 
-def handle_command(state: SessionState, user_input: str, tools: list[Tool]) -> bool:
+def handle_command(state: SessionState, user_input: str, tools: list[Tool], client: OpenAI) -> bool:
     """Esegue un comando slash. Restituisce True se il comando era riconosciuto."""
     command, _, arg = user_input.partition(" ")
     arg = arg.strip()
@@ -343,11 +482,15 @@ def handle_command(state: SessionState, user_input: str, tools: list[Tool]) -> b
             f"({state.total_prompt_tokens} tok in / {state.total_completion_tokens} tok out)"
         )
     elif command == "/compact":
-        cmd_compact(state, arg)
+        # Il client serve solo a /compact llm: e' l'unica ragione per cui questa funzione
+        # riceve il client OpenAI.
+        cmd_compact(state, arg, client)
     elif command == "/reasoning":
         cmd_reasoning(state, arg)
     elif command == "/save":
         cmd_save(state)
+    elif command == "/load":
+        cmd_load(state, arg)
     elif command == "/model":
         cmd_model(state)
     else:
@@ -396,7 +539,10 @@ def main(
     # .env come fallback: popola os.environ solo per le chiavi non gia' presenti
     load_env_file(workdir / ".env")
 
-    ctx = load_context(workdir)
+    # Stesso timestamp per log e memoria di sessione: si ritrovano a coppie
+    session_stamp = f"{datetime.now():%Y%m%d_%H%M%S}"
+    session_memory = f"{MEMORY_DIR}/memory-{session_stamp}.md"
+    ctx = load_context(workdir, session_memory)
     _maybe_offer_credentials_template(workdir, ctx)
 
     env_vars = extract_env_vars(ctx.credentials.content or "")
@@ -418,13 +564,24 @@ def main(
         print(f"Errore: --reasoning non valido: {reasoning}. Usa: {', '.join(REASONING_LEVELS)}")
         raise typer.Exit(1)
 
+    # Precedenza del modello iniziale: --model, poi model.default in config.yaml, poi il
+    # default del registry.
+    model_cfg = config_section(workdir, "model")
     initial_model = DEFAULT_MODEL
+    configured = model_cfg.get("default")
+    if configured:
+        found = find_model(str(configured))
+        if found is None:
+            startup_warnings.append(f"[Avviso] model.default '{configured}' non nel registry: ignorato.")
+        else:
+            initial_model = found
     if model:
         found = find_model(model)
         if found is None:
-            print(f"[Avviso] modello '{model}' non nel registry: uso {DEFAULT_MODEL.label}.")
+            print(f"[Avviso] modello '{model}' non nel registry: uso {initial_model.label}.")
         else:
             initial_model = found
+    initial_json_mode = bool(model_cfg.get("json_mode", False)) and initial_model.json_supported
 
     api_key = os.environ["OPENROUTER_API_KEY"]
     client = OpenAI(
@@ -442,7 +599,7 @@ def main(
 
     # Valori delle credenziali presenti: mai stampati ne' loggati in chiaro
     secrets = [os.environ[name] for name in check.present if os.environ.get(name)]
-    logger = SessionLogger(workdir, secrets)
+    logger = SessionLogger(workdir, secrets, session_stamp)
 
     state = SessionState(
         model=initial_model,
@@ -452,10 +609,16 @@ def main(
         yolo=yolo,
         dry_run=dry_run,
         reasoning_effort=reasoning,
+        json_mode=initial_json_mode,
     )
     state.reset_messages()
 
-    tools = build_native_tools(state, make_confirm_fn(state))
+    confirm_fn = make_confirm_fn(state)
+    tools = build_native_tools(state, confirm_fn)
+    # Riassunto LLM in compattazione: attivo solo se richiesto in config.yaml, e comunque
+    # previa conferma esplicita al primo turno.
+    llm_summary_enabled = bool(config_section(workdir, "compact").get("llm_summary", False))
+    llm_summary_asked = False
     mcp_tools, mcp_warnings = load_mcp_tools(workdir, enabled=not no_mcp)
     tools.extend(mcp_tools)
     startup_warnings.extend(f"[Avviso] {w}" for w in mcp_warnings)
@@ -485,14 +648,29 @@ def main(
             break
         if not user_input:
             continue
-        if user_input.startswith("/") and handle_command(state, user_input, tools):
+        if user_input.startswith("/") and handle_command(state, user_input, tools, client):
             continue
 
-        # Una volta per turno, mai dentro il ciclo di step: l'agente puo' aver riscritto
-        # memory.md e il system prompt va aggiornato, ma cambiarlo a ogni step
-        # distruggerebbe il prompt caching del provider.
+        # Una volta per turno, mai dentro il ciclo di step: l'agente puo' aver scritto una
+        # memoria e l'indice nel system prompt va aggiornato, ma cambiare il prompt a ogni
+        # step distruggerebbe il prompt caching del provider.
         if state.refresh_system_prompt():
-            print("[Memoria] memory.md aggiornata: ricaricata nel contesto.")
+            print("[Memoria] indice delle memorie aggiornato.")
+
+        # Riassunto LLM nella compattazione automatica: si chiede una volta per sessione,
+        # perche' comporta una chiamata API per ogni risultato compattato.
+        if llm_summary_enabled and state.summarizer is None and not llm_summary_asked:
+            llm_summary_asked = True
+            modello_riassunto = summary_model_id(workdir)
+            if confirm_fn(
+                f"Compattare con riassunti generati da {modello_riassunto} (una chiamata per risultato)?",
+                preview=None,
+                level=LEVEL_WARNING,
+            ):
+                state.summarizer = make_summarizer(state, client)
+                print(f"[Compattazione] i riassunti useranno {modello_riassunto}.")
+            else:
+                print("[Compattazione] resta il riassunto deterministico (nessuna chiamata extra).")
 
         state.messages.append({"role": "user", "content": user_input})
         state.logger.log("user", content=user_input)

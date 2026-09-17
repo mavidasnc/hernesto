@@ -62,11 +62,16 @@ i file markdown che definiscono identità, istruzioni, memoria e credenziali del
   mai committato). All'avvio ernesto verifica che le variabili dichiarate
   esistano: `OPENROUTER_API_KEY` mancante è un errore fatale, le altre
   producono un avviso e il tool corrispondente risponde con un errore leggibile.
-- **`memory.md`** — memoria di lavoro del progetto: fatti durevoli e decisioni che
-  l'agente stesso scrive e pota con `edit_file`. Cercata **solo** nella cartella di
-  lavoro (non in `~/.config/ernesto/`), riletta a ogni turno, troncata a 4000 caratteri
-  perché il system prompt viaggia in ogni richiesta. Sopravvive a `/clear` e alle
-  sessioni successive.
+Accanto ai file di istruzioni ci sono le **memorie**, che l'agente scrive e pota da sé:
+
+- **`memory.md`** — memoria persistente del progetto: fatti durevoli, preferenze,
+  decisioni. Sopravvive a `/clear` e alle sessioni successive.
+- **`memories/memory-<timestamp>.md`** — memoria della singola sessione: stato del lavoro
+  in corso ed esiti intermedi. Ha lo stesso timestamp del log, così le due si ritrovano.
+
+Le memorie **non vengono caricate nel contesto**: nel system prompt entra solo il loro
+indice (nome, dimensione, prima riga) e il modello ne legge il contenuto con `read_file`
+quando ritiene che gli serva. Sono cercate solo nella cartella di lavoro.
 
 I file sono parte del contesto inviato al modello e sono normalmente
 leggibili e scrivibili dagli strumenti `read_file`/`write_file`.
@@ -98,13 +103,14 @@ parte comunque con un avviso.
 | `/model` | Cambia il modello attivo (azzera la conversazione) |
 | `/context` | Riepilogo del contesto: modello, reasoning, token, strumenti, stato |
 | `/clear` | Azzera la conversazione (mantiene log e conteggi cumulativi) |
-| `/compact` | Riassume subito i risultati strumento in storia (`/compact N` preserva N giri) |
+| `/compact` | Riassume subito i risultati strumento in storia (`/compact N` preserva N giri, `/compact llm` fa riassumere a un modello) |
 | `/yolo` | Attiva/disattiva il bypass delle conferme |
 | `/tools` | Elenca gli strumenti registrati (nativi + MCP) |
 | `/log` | Percorso del log di sessione e riepilogo |
 | `/cost` | Costo cumulativo della sessione |
 | `/reasoning [livello]` | Mostra o cambia il livello di reasoning |
-| `/save` | Salva l'intera sessione in `saves/` |
+| `/save` | Salva la sessione in `saves/` (`.txt` da leggere e `.json` da ricaricare) |
+| `/load` | Riprende una sessione salvata (`/load` apre l'elenco, `/load <nome>` va diretto) |
 | `exit` / `quit` / Ctrl+C | Termina |
 
 Il prompt mostra sempre i cumulativi di sessione: `Tu [24.1k in · 6.3k out · $0.0082]>`.
@@ -114,6 +120,13 @@ Il prompt mostra sempre i cumulativi di sessione: `Tu [24.1k in · 6.3k out · $
 > `response_format: json_object` impedisce ai provider di emettere tool call
 > native. Per usare gli strumenti lascia il JSON mode disattivato; `/context`
 > segnala lo stato ("Strumenti: DISATTIVATI (JSON mode attivo)").
+
+## Configurazione: `config.yaml`
+
+Copia `config.yaml.example` in `config.yaml` nella cartella di lavoro (o in
+`~/.config/ernesto/`) per impostare il modello iniziale, il modello usato per i riassunti
+della compattazione e i pattern pericolosi aggiuntivi. Vince il primo file trovato; tutte
+le chiavi sono opzionali e un file malformato viene ignorato senza bloccare l'avvio.
 
 ## Policy di sicurezza
 
@@ -127,7 +140,10 @@ Il prompt mostra sempre i cumulativi di sessione: `Tu [24.1k in · 6.3k out · $
   modello che voglia eluderla).
 - **Conferme**: prima di `send_email` e di comandi che matchano la denylist
   (`rm -rf`, `sudo`, `git push`, `git reset --hard`, `docker system prune`, …)
-  viene chiesta conferma. La denylist è estendibile in `config.yaml`
+  viene chiesta conferma, con etichetta e colore diversi a seconda della gravità
+  (distruttivo, esterno, attenzione). Il comando è normalizzato prima del confronto, così
+  `rm -r -f` e `RM -RF` non sfuggono; resta comunque una difesa contro la disattenzione,
+  non contro un modello che voglia eluderla. La denylist è estendibile in `config.yaml`
   (`safety.deny_patterns`, lista di regex).
 - **`--yolo` / `/yolo`**: salta le conferme. Lo stato è sempre visibile nel prompt.
 - **`--dry-run`**: nessun effetto collaterale, tutto simulato.

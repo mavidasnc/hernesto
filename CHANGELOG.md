@@ -5,6 +5,20 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.3.0] - 2026-09-17
+
+### Aggiunto
+- **Memoria a due livelli**: `memory.md` persistente per il progetto e `memories/memory-<timestamp>.md` per la singola sessione (stesso timestamp del log). Entrambe scritte e potate dall'agente con gli strumenti esistenti, senza nuovi strumenti da pagare in token a ogni step.
+- **Comando `/load`**: riprende una sessione salvata ripristinando la storia con le `tool_calls` intatte. `/save` ora scrive anche un `.json` accanto al `.txt`, perche' il testo perdeva `tool_calls` e `tool_call_id` e non era ricaricabile. Il salvataggio viene validato prima di sostituire la storia: un file manomesso produce un errore leggibile invece di una richiesta che l'API rifiuta.
+- **Riassunto della compattazione generato da un modello**: `/compact llm` lo usa su richiesta; nella compattazione automatica viene proposto con conferma solo se `compact.llm_summary` e' attivo in `config.yaml`. Se il modello non risponde si ricade sul riassunto deterministico: un percorso che serve a risparmiare non deve poter far fallire il turno.
+- **`config.yaml` come configurazione utente**: modello iniziale (`model.default`), JSON mode all'avvio, modello dei riassunti (`compact.summary_model`) e denylist aggiuntiva. Cercato nella cartella di lavoro e poi in `~/.config/ernesto/`; vedi `config.yaml.example`. `pyyaml` diventa una dipendenza dichiarata.
+- **Conferme differenziate per gravita'** (C10): etichette ASCII e colori distinti per azioni distruttive (rosso), verso l'esterno (giallo) e fuori dalla cartella di lavoro (ciano). Il colore si applica solo quando l'output e' un terminale.
+
+### Cambiato
+- **Le memorie non entrano piu' nel system prompt**: entra solo il loro indice (nome, dimensione, prima riga) e il modello legge il contenuto con `read_file` quando gli serve. Prima `memory.md` viaggiava integralmente in ogni richiesta di ogni step anche quando non c'entrava nulla con il task.
+- **Modello di default**: Qwen 3.8 27B al posto di Gemma free, con JSON mode disattivato, sovrascrivibile da `config.yaml` e da `--model`.
+- **Denylist meno aggirabile** (C7): il comando viene normalizzato (minuscole, spazi collassati) e i pattern coprono `rm -r -f`, `rm --recursive --force`, `RM -RF` e `git -C . push`. Resta una difesa contro la disattenzione, e ora il codice e il README lo dicono.
+
 ## [0.2.0] - 2026-09-17
 
 ### Aggiunto

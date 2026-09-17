@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx
 
-from . import ConfirmFn, Tool
+from . import LEVEL_EXTERNAL, ConfirmFn, Tool
 
 if TYPE_CHECKING:
     from ..session import SessionState
@@ -55,7 +55,7 @@ class SendEmailTool(Tool):
             return f"DRY-RUN: email simulata a {to} (oggetto: {subject})"
         if not self._state.yolo:
             preview = f"A: {to}\nOggetto: {subject}\n\n{text[:500]}"
-            if not self._confirm("Inviare questa email?", preview=preview):
+            if not self._confirm("Inviare questa email?", preview=preview, level=LEVEL_EXTERNAL):
                 return "ERRORE: invio email annullato dall'utente"
         name = from_name or os.environ.get("RESEND_FROM_NAME") or DEFAULT_FROM_NAME
         from_field = sender if "<" in sender else f"{name} <{sender}>"

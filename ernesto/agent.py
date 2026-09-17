@@ -104,7 +104,7 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
         # Compattazione prima della chiamata: il risparmio vale gia' sullo step che la
         # innesca. Non cambia la lunghezza della lista, quindi rewind_index resta valido.
         if state.history_token_estimate() > COMPACT_THRESHOLD_TOKENS:
-            compacted, saved = compact_tool_results(state.messages)
+            compacted, saved = compact_tool_results(state.messages, summarizer=state.summarizer)
             if compacted:
                 state.compacted_count += compacted
                 state.compacted_tokens += saved

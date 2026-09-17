@@ -6,16 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from ernesto.config import MEMORY_LIMIT
+from ernesto.config import MEMORY_DIR
 from ernesto.context import (
     AGENT_SYSTEM_PROMPT,
     compose_system_prompt,
     extract_env_vars,
     load_context,
+    memory_files,
     parse_soul,
     reload_memory,
     summary_line,
-    system_prompt_parts,
     verify_env_vars,
 )
 
@@ -41,7 +41,7 @@ def test_no_context_files(workdir: Path) -> None:
     assert ctx.soul.content is None
     assert ctx.agent.content is None
     assert ctx.credentials.content is None
-    assert summary_line(ctx) == "Contesto: soul.md ✗ · agent.md ✗ · credentials.md ✗ · memory.md ✗"
+    assert summary_line(ctx) == "Contesto: soul.md ✗ · agent.md ✗ · credentials.md ✗ · memorie: 0"
     # Il system prompt di default resta composto comunque
     assert AGENT_SYSTEM_PROMPT in compose_system_prompt(ctx)
 
@@ -52,7 +52,7 @@ def test_context_files_present(workdir: Path) -> None:
     (workdir / "agent.md").write_text("Usa sempre pytest.", encoding="utf-8")
     (workdir / "credentials.md").write_text(CREDENTIALS_SAMPLE, encoding="utf-8")
     ctx = load_context(workdir)
-    assert summary_line(ctx) == "Contesto: soul.md ✓ · agent.md ✓ · credentials.md ✓ · memory.md ✗"
+    assert summary_line(ctx) == "Contesto: soul.md ✓ · agent.md ✓ · credentials.md ✓ · memorie: 0"
     prompt = compose_system_prompt(ctx)
     assert "Sei allegro." in prompt
     assert "## Istruzioni operative del progetto" in prompt
@@ -132,52 +132,63 @@ def test_verify_env_vars_openrouter_missing_fatal() -> None:
 
 
 # ---------------------------------------------------------------------------
-# memory.md
+# memorie
 # ---------------------------------------------------------------------------
 
 
-def test_memory_in_system_prompt(workdir: Path) -> None:
-    """La memoria di lavoro entra nel system prompt con la sua etichetta."""
-    (workdir / "memory.md").write_text("Il cliente preferisce PostgreSQL.", encoding="utf-8")
+def test_indice_memorie_nel_prompt_senza_contenuto(workdir: Path) -> None:
+    """Il prompt elenca le memorie ma non ne carica il contenuto."""
+    (workdir / "memory.md").write_text("# Preferenze\nIl cliente preferisce PostgreSQL.", encoding="utf-8")
     ctx = load_context(workdir)
     prompt = compose_system_prompt(ctx)
-    assert "Il cliente preferisce PostgreSQL." in prompt
-    assert "Memoria di lavoro" in prompt
-    assert any(label.startswith("memory.md") for label, _ in system_prompt_parts(ctx))
+    assert "memory.md" in prompt
+    assert "Preferenze" in prompt              # la prima riga fa da descrizione
+    assert "PostgreSQL" not in prompt          # il contenuto resta fuori dal contesto
+    assert "read_file" in prompt               # il modello sa come leggerla
 
 
-def test_memory_absent_no_part(workdir: Path) -> None:
-    """Senza il file nessuna parte lo menziona: chi non la usa non paga token."""
-    ctx = load_context(workdir)
-    assert not any(label.startswith("memory.md") for label, _ in system_prompt_parts(ctx))
+def test_indice_memorie_senza_file(workdir: Path) -> None:
+    """Senza memorie l'indice lo dichiara, cosi' il modello non le cerca invano."""
+    prompt = compose_system_prompt(load_context(workdir))
+    assert "Nessun file di memoria" in prompt
 
 
-def test_memory_only_from_workdir(workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_memoria_di_sessione_dichiarata(workdir: Path) -> None:
+    """Il nome del file di memoria della sessione corrente e' nel prompt."""
+    ctx = load_context(workdir, session_memory="memories/memory-20260917_094311.md")
+    prompt = compose_system_prompt(ctx)
+    assert "memories/memory-20260917_094311.md" in prompt
+    assert "QUESTA sessione" in prompt
+
+
+def test_memorie_di_sessione_elencate_dalla_piu_recente(workdir: Path) -> None:
+    """Le memorie di sessione compaiono nell'indice, dalla piu' recente."""
+    memories = workdir / MEMORY_DIR
+    memories.mkdir()
+    (memories / "memory-20260101_100000.md").write_text("vecchia", encoding="utf-8")
+    (memories / "memory-20260917_094311.md").write_text("recente", encoding="utf-8")
+    elenco = [p.name for p in memory_files(workdir)]
+    assert elenco == ["memory-20260917_094311.md", "memory-20260101_100000.md"]
+    prompt = compose_system_prompt(load_context(workdir))
+    assert prompt.index("memory-20260917_094311.md") < prompt.index("memory-20260101_100000.md")
+
+
+def test_memorie_solo_dalla_workdir(workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Una memoria in ~/.config non deve rientrare negli altri progetti."""
     fake_config = tmp_path / "config-home"
     fake_config.mkdir()
     (fake_config / "memory.md").write_text("memoria di un altro progetto", encoding="utf-8")
     monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
-    ctx = load_context(workdir)
-    assert ctx.memory.content is None
+    assert memory_files(workdir) == []
 
 
-def test_memory_truncated(workdir: Path) -> None:
-    """Oltre il tetto la memoria viene troncata con l'indicazione di potarla."""
-    (workdir / "memory.md").write_text("x" * (MEMORY_LIMIT * 3), encoding="utf-8")
-    ctx = load_context(workdir)
-    parte = next(text for label, text in system_prompt_parts(ctx) if label.startswith("memory.md"))
-    assert "troncata" in parte
-    assert len(parte) < MEMORY_LIMIT + 300
-
-
-def test_reload_memory_detects_change(workdir: Path) -> None:
-    """La rilettura segnala creazione e modifica, non i casi in cui nulla e' cambiato."""
+def test_reload_memory_rileva_i_cambiamenti(workdir: Path) -> None:
+    """L'indice si aggiorna quando una memoria nasce o cambia dimensione."""
     ctx = load_context(workdir)
     assert reload_memory(ctx) is False
     (workdir / "memory.md").write_text("primo fatto", encoding="utf-8")
     assert reload_memory(ctx) is True
     assert reload_memory(ctx) is False
-    (workdir / "memory.md").write_text("fatto aggiornato", encoding="utf-8")
+    (workdir / "memory.md").write_text("un fatto completamente diverso", encoding="utf-8")
     assert reload_memory(ctx) is True
-    assert "fatto aggiornato" in (ctx.memory.content or "")
+    assert "memory.md" in ctx.memory_index

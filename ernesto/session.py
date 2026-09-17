@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .config import COMPACT_HEAD_CHARS, COMPACT_KEEP_RECENT, COMPACT_MIN_CHARS, LOG_CONTENT_LIMIT
+from .config import (
+    COMPACT_HEAD_CHARS,
+    COMPACT_KEEP_RECENT,
+    COMPACT_MIN_CHARS,
+    COMPACT_SUMMARY_MAX_CHARS,
+    LOG_CONTENT_LIMIT,
+)
 from .context import Context, compose_system_prompt, reload_memory
 from .models import ModelConfig
 
@@ -25,10 +32,12 @@ def mask_secret(value: str) -> str:
 class SessionLogger:
     """Scrive gli eventi della sessione in un file JSONL con masking dei segreti."""
 
-    def __init__(self, workdir: Path, secrets: list[str]) -> None:
+    def __init__(self, workdir: Path, secrets: list[str], stamp: str | None = None) -> None:
         log_dir = workdir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        self.path = log_dir / f"session-{datetime.now():%Y%m%d_%H%M%S}.jsonl"
+        # Lo stesso stamp del file di memoria di sessione, cosi' log e memoria si incrociano.
+        stamp = stamp or f"{datetime.now():%Y%m%d_%H%M%S}"
+        self.path = log_dir / f"session-{stamp}.jsonl"
         self._secrets = [s for s in secrets if s]
 
     def _mask(self, text: str) -> str:
@@ -84,9 +93,38 @@ def _digest(content: str, name: str, args: str) -> str:
     return "\n".join(parts)
 
 
+SUMMARY_PROMPT = (
+    "Riassumi in massimo 5 righe il risultato di uno strumento, per un agente che deve "
+    "ricordare cosa ha gia' fatto. Scrivi cosa e' stato fatto e cosa e' emerso (dati "
+    "concreti, nomi, numeri, esiti). Niente preamboli, niente commenti sul riassunto."
+)
+
+
+def summarize_with_llm(client: Any, model_id: str, content: str, name: str) -> str | None:
+    """Riassunto di un risultato strumento generato da un modello. None su qualunque errore.
+
+    Il chiamante ricade sul riassunto deterministico: un percorso il cui unico scopo e'
+    risparmiare non deve poter far fallire il turno.
+    """
+    try:
+        resp = client.chat.completions.create(
+            model=model_id,
+            messages=[
+                {"role": "system", "content": SUMMARY_PROMPT},
+                {"role": "user", "content": f"Strumento: {name}\n\n{content[:COMPACT_SUMMARY_MAX_CHARS]}"},
+            ],
+            stream=False,
+        )
+        testo = (resp.choices[0].message.content or "").strip()
+    except Exception:
+        return None
+    return testo or None
+
+
 def compact_tool_results(
     messages: list[dict[str, Any]],
     keep_recent: int = COMPACT_KEEP_RECENT,
+    summarizer: Callable[[str, str], str | None] | None = None,
 ) -> tuple[int, int]:
     """Riassume i risultati degli strumenti piu' vecchi di `keep_recent` giri.
 
@@ -96,6 +134,9 @@ def compact_tool_results(
 
     Il confine e' calcolato a granularita' di assistant message, non di indice assoluto:
     i risultati di uno stesso assistant sono tutti compattati o tutti intatti.
+
+    Con `summarizer` il riassunto e' generato da un modello (vedi summarize_with_llm); se
+    restituisce None si ricade sul riassunto deterministico.
 
     Restituisce (messaggi compattati, token stimati risparmiati).
     """
@@ -115,11 +156,56 @@ def compact_tool_results(
         if content.startswith(COMPACT_PREFIX) or len(content) < COMPACT_MIN_CHARS or content.startswith("ERRORE"):
             continue
         name = str(msg.get("name") or "strumento")
-        digest = _digest(content, name, args_by_id.get(str(msg.get("tool_call_id")), ""))
+        args = args_by_id.get(str(msg.get("tool_call_id")), "")
+        riassunto = summarizer(content, name) if summarizer else None
+        digest = f"{COMPACT_PREFIX} {name} {args}\n{riassunto}" if riassunto else _digest(content, name, args)
         saved += estimate_tokens(content) - estimate_tokens(digest)
         msg["content"] = digest
         compacted += 1
     return compacted, max(saved, 0)
+
+
+def session_snapshot(state: SessionState) -> dict[str, Any]:
+    """Istantanea ricaricabile della sessione: messaggi completi piu' metadati."""
+    return {
+        "versione": 1,
+        "salvato": datetime.now().isoformat(timespec="seconds"),
+        "modello": state.model.id,
+        "json_mode": state.json_mode,
+        "reasoning": state.reasoning_effort,
+        "token": {"in": state.total_prompt_tokens, "out": state.total_completion_tokens},
+        "costo": state.total_cost,
+        "log": str(state.logger.path) if state.logger else None,
+        "messaggi": state.messages,
+    }
+
+
+def validate_snapshot(data: Any) -> str | None:
+    """Verifica un'istantanea prima di sostituirci la storia. None se e' valida.
+
+    Un file manomesso deve produrre un errore leggibile qui, non una richiesta che l'API
+    rifiuta a meta' del primo turno.
+    """
+    if not isinstance(data, dict):
+        return "il file non contiene un oggetto JSON"
+    messages = data.get("messaggi")
+    if not isinstance(messages, list) or not messages:
+        return "nessun messaggio nel salvataggio"
+    ruoli_validi = {"system", "user", "assistant", "tool"}
+    dichiarati: set[str] = set()
+    for i, msg in enumerate(messages):
+        if not isinstance(msg, dict):
+            return f"messaggio {i} non e' un oggetto"
+        ruolo = msg.get("role")
+        if ruolo not in ruoli_validi:
+            return f"messaggio {i}: ruolo sconosciuto ({ruolo!r})"
+        for call in msg.get("tool_calls") or []:
+            if isinstance(call, dict) and call.get("id"):
+                dichiarati.add(str(call["id"]))
+        # Un risultato tool senza la chiamata che lo ha generato rende la storia invalida
+        if ruolo == "tool" and str(msg.get("tool_call_id")) not in dichiarati:
+            return f"messaggio {i}: risultato tool senza la chiamata corrispondente"
+    return None
 
 
 def fmt_tokens(n: int) -> str:
@@ -163,6 +249,9 @@ class SessionState:
     tool_calls_count: int = 0
     compacted_count: int = 0    # risultati strumento riassunti nella sessione
     compacted_tokens: int = 0   # token stimati risparmiati (cumulativo)
+    # Riassuntore LLM per la compattazione automatica: None = riassunto deterministico.
+    # Viene impostato dal REPL solo dopo conferma dell'utente (compact.llm_summary).
+    summarizer: Callable[[str, str], str | None] | None = None
 
     def system_prompt(self) -> str:
         """System prompt completo per la configurazione corrente."""

@@ -36,11 +36,18 @@ Viene **iniettato in ogni strumento** al momento della costruzione: è così che
 conoscono la workdir della sandbox e i flag di sicurezza. Non esiste stato globale.
 
 Il system prompt è composto da `ernesto/context.py` (`load_context` →
-`compose_system_prompt`): prompt di base + `soul.md` + `agent.md` + `memory.md` +
-`credentials.md`, cercati prima nella workdir e poi in `~/.config/ernesto/` —
-`memory.md` fa eccezione ed è solo per progetto. È l'unico file di contesto che l'agente
-scrive da sé: `refresh_system_prompt()` lo rilegge una volta per turno nel REPL (mai
-dentro il ciclo di step, che distruggerebbe il prompt caching). `soul.md` con frontmatter
+`compose_system_prompt`): prompt di base + `soul.md` + `agent.md` + `credentials.md`,
+cercati prima nella workdir e poi in `~/.config/ernesto/`, più l'**indice delle memorie**.
+Le memorie (`memory.md` persistente e `memories/memory-<ts>.md` di sessione) non entrano
+mai nel prompt: `memory_index()` ne elenca nome, dimensione e prima riga, e il modello
+legge il contenuto con `read_file` solo quando serve. `refresh_system_prompt()` ricalcola
+l'indice una volta per turno nel REPL, mai dentro il ciclo di step, che distruggerebbe il
+prompt caching del provider.
+
+Le preferenze utente stanno in `config.yaml` (workdir, poi `~/.config/ernesto/`), letto da
+`load_user_config()`/`config_section()` in `ernesto/config.py`: modello iniziale, modello
+per i riassunti della compattazione, denylist aggiuntiva. È l'unico punto da estendere per
+una nuova preferenza. `soul.md` con frontmatter
 `mode: replace` sostituisce il prompt di base invece di accodarsi.
 
 Gli strumenti stanno in `ernesto/tools/`: la classe base `Tool` e la factory
@@ -60,6 +67,9 @@ mancano, la sessione parte lo stesso con un avviso.
   questa garanzia**: esegue una shell arbitraria e può scrivere ovunque. Lì la difesa è
   `find_escaping_path()` in `tools/shell.py`, che chiede conferma su percorsi assoluti e
   `..`: euristica sul testo del comando, non un confine.
+- **Le conferme dichiarano la gravità** (`LEVEL_DESTRUCTIVE`/`LEVEL_EXTERNAL`/
+  `LEVEL_WARNING` in `tools/__init__.py`): le etichette sono ASCII e il colore si applica
+  solo se `sys.stdout.isatty()`, come per il banner.
 - **La compattazione riscrive `content`, non rimuove mai messaggi**
   (`compact_tool_results` in `session.py`): così le coppie assistant-con-`tool_calls` /
   `tool` restano accoppiate e `rewind_index` in `run_turn` resta valido.

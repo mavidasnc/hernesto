@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from ernesto.session import SessionState
+from ernesto.tools import LEVEL_EXTERNAL
 from ernesto.tools.mail import SendEmailTool
 from ernesto.tools.web import RATE_LIMIT_WAIT, BraveSearchTool, FetchUrlTool
 
@@ -192,7 +193,7 @@ def test_fetch_url_tronca(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_send_email_missing_key(monkeypatch: pytest.MonkeyPatch, state: SessionState) -> None:
     """Senza RESEND_API_KEY lo strumento restituisce un errore leggibile, zero crash."""
     monkeypatch.delenv("RESEND_API_KEY", raising=False)
-    tool = SendEmailTool(state, lambda message, preview=None: True)
+    tool = SendEmailTool(state, lambda message, preview=None, level='': True)
     result = tool.run(to="a@b.com", subject="s", text="t")
     assert result.startswith("ERRORE")
     assert "RESEND_API_KEY" in result
@@ -202,7 +203,7 @@ def test_send_email_missing_from(monkeypatch: pytest.MonkeyPatch, state: Session
     """Senza RESEND_FROM lo strumento restituisce un errore leggibile."""
     monkeypatch.setenv("RESEND_API_KEY", "test-key")
     monkeypatch.delenv("RESEND_FROM", raising=False)
-    tool = SendEmailTool(state, lambda message, preview=None: True)
+    tool = SendEmailTool(state, lambda message, preview=None, level='': True)
     result = tool.run(to="a@b.com", subject="s", text="t")
     assert "RESEND_FROM" in result
 
@@ -211,7 +212,7 @@ def test_send_email_refused(monkeypatch: pytest.MonkeyPatch, state: SessionState
     """Senza conferma dell'utente l'email non viene inviata."""
     monkeypatch.setenv("RESEND_API_KEY", "test-key")
     monkeypatch.setenv("RESEND_FROM", "chat@example.com")
-    tool = SendEmailTool(state, lambda message, preview=None: False)
+    tool = SendEmailTool(state, lambda message, preview=None, level='': False)
     result = tool.run(to="a@b.com", subject="s", text="t")
     assert "annullato" in result
 
@@ -221,7 +222,7 @@ def test_send_email_ok(monkeypatch: pytest.MonkeyPatch, state: SessionState) -> 
     monkeypatch.setenv("RESEND_API_KEY", "test-key")
     monkeypatch.setenv("RESEND_FROM", "chat@example.com")
     monkeypatch.setattr("ernesto.tools.mail.httpx.post", lambda *a, **k: FakeResponse({"id": "msg_123"}))
-    tool = SendEmailTool(state, lambda message, preview=None: True)
+    tool = SendEmailTool(state, lambda message, preview=None, level='': True)
     result = tool.run(to="a@b.com", subject="s", text="t")
     assert "msg_123" in result
 
@@ -231,6 +232,20 @@ def test_send_email_dry_run(monkeypatch: pytest.MonkeyPatch, state: SessionState
     monkeypatch.setenv("RESEND_API_KEY", "test-key")
     monkeypatch.setenv("RESEND_FROM", "chat@example.com")
     state.dry_run = True
-    tool = SendEmailTool(state, lambda message, preview=None: True)
+    tool = SendEmailTool(state, lambda message, preview=None, level='': True)
     result = tool.run(to="a@b.com", subject="s", text="t")
     assert result.startswith("DRY-RUN")
+
+
+def test_send_email_livello_esterno(monkeypatch: pytest.MonkeyPatch, state: SessionState) -> None:
+    """L'email chiede conferma come azione verso l'esterno, non come distruttiva."""
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+    monkeypatch.setenv("RESEND_FROM", "chat@example.com")
+    livelli: list[str] = []
+
+    def confirm(message: str, preview: str | None = None, level: str = "") -> bool:
+        livelli.append(level)
+        return False
+
+    SendEmailTool(state, confirm).run(to="a@b.com", subject="x", text="y")
+    assert livelli == [LEVEL_EXTERNAL]

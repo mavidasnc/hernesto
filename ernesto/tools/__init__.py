@@ -13,8 +13,14 @@ from typing import TYPE_CHECKING, Any, ClassVar
 if TYPE_CHECKING:
     from ernesto.session import SessionState
 
-# Callback di conferma iniettato dal runner: (messaggio, anteprima opzionale) -> bool
-ConfirmFn = Callable[[str, str | None], bool]
+# Livelli di gravita' della conferma, dal piu' grave: cambiano etichetta e colore mostrati
+# all'utente, cosi' un rm -rf non arriva con lo stesso aspetto di una email.
+LEVEL_DESTRUCTIVE = "distruttivo"  # perdita di dati o azioni irreversibili sulla macchina
+LEVEL_EXTERNAL = "esterno"         # qualcosa esce dalla macchina (email, push)
+LEVEL_WARNING = "attenzione"       # legittimo ma fuori dai confini attesi
+
+# Callback di conferma iniettato dal runner: (messaggio, anteprima, livello) -> bool
+ConfirmFn = Callable[..., bool]
 
 
 class Tool:
