@@ -15,7 +15,7 @@ from openai import OpenAI
 
 from . import __version__
 from .agent import run_turn
-from .config import OPENROUTER_BASE, load_env_file
+from .config import COMPACT_KEEP_RECENT, COMPACT_THRESHOLD_TOKENS, OPENROUTER_BASE, load_env_file
 from .context import (
     Context,
     extract_env_vars,
@@ -29,6 +29,7 @@ from .models import DEFAULT_MODEL, MODELS, find_model, load_pricing
 from .session import (
     SessionLogger,
     SessionState,
+    compact_tool_results,
     estimate_tokens,
     fmt_cost,
     fmt_tokens,
@@ -57,7 +58,7 @@ CREDENTIALS_TEMPLATE = """# Credenziali — progetto
 """
 
 COMANDI = (
-    "/context · /clear · /model · /tools · /reasoning · /yolo · /log · /cost · "
+    "/context · /clear · /compact · /model · /tools · /reasoning · /yolo · /log · /cost · "
     "/save · exit/quit · Ctrl+C interrompe il turno (al prompt: esce)"
 )
 
@@ -233,7 +234,12 @@ def cmd_context(state: SessionState, tools: list[Tool]) -> None:
         total += tokens
         print(f"  · {label}: ~{fmt_tokens(tokens)} tok")
     print(f"  = totale ~{fmt_tokens(total)} tok stimati")
-    print(f"Messaggi in storia: {len(state.messages)} (~{fmt_tokens(state.history_token_estimate())} tok stimati)")
+    storia = f"Messaggi in storia: {len(state.messages)} (~{fmt_tokens(state.history_token_estimate())} tok stimati"
+    print(f"{storia} · {state.compacted_count} risultati compattati)" if state.compacted_count else f"{storia})")
+    print(
+        f"Compattazione: soglia ~{fmt_tokens(COMPACT_THRESHOLD_TOKENS)} tok · "
+        f"ultimi {COMPACT_KEEP_RECENT} giri integrali · risparmiati ~{fmt_tokens(state.compacted_tokens)} tok"
+    )
     native = [t.name for t in tools if not t.name.startswith("mcp__")]
     mcp = [t.name for t in tools if t.name.startswith("mcp__")]
     if state.json_mode:
@@ -261,9 +267,36 @@ def cmd_log(state: SessionState) -> None:
     else:
         print("Log di sessione non attivo.")
     print(f"Messaggi in storia: {len(state.messages)} · tool call eseguiti: {state.tool_calls_count}")
+    if state.compacted_count:
+        print(
+            f"Compattazioni: {state.compacted_count} risultati riassunti "
+            f"(~{fmt_tokens(state.compacted_tokens)} tok) — contenuto integrale nel JSONL"
+        )
     print(
         f"Token totali: {state.total_prompt_tokens} in / {state.total_completion_tokens} out "
         f"· costo cumulativo {fmt_cost(state.total_cost)}"
+    )
+
+
+def cmd_compact(state: SessionState, arg: str) -> None:
+    """Compatta subito i risultati strumento in storia (arg: giri da preservare, default 1)."""
+    keep = 1  # chi digita /compact vuole risparmiare adesso, non fra tre giri
+    if arg:
+        if not arg.isdigit():
+            print(f"Argomento non valido: '{arg}'. Uso: /compact [giri da preservare]")
+            return
+        keep = int(arg)
+    compacted, saved = compact_tool_results(state.messages, keep_recent=keep)
+    if not compacted:
+        print("Niente da compattare.")
+        return
+    state.compacted_count += compacted
+    state.compacted_tokens += saved
+    if state.logger:
+        state.logger.log("compact", messages=compacted, saved_tokens=saved, manual=True)
+    print(
+        f"Compattati {compacted} risultati strumento · ~{fmt_tokens(saved)} tok stimati risparmiati "
+        f"(storia ora ~{fmt_tokens(state.history_token_estimate())} tok)."
     )
 
 
@@ -309,6 +342,8 @@ def handle_command(state: SessionState, user_input: str, tools: list[Tool]) -> b
             f"Costo cumulativo: {fmt_cost(state.total_cost)} "
             f"({state.total_prompt_tokens} tok in / {state.total_completion_tokens} tok out)"
         )
+    elif command == "/compact":
+        cmd_compact(state, arg)
     elif command == "/reasoning":
         cmd_reasoning(state, arg)
     elif command == "/save":
@@ -452,6 +487,12 @@ def main(
             continue
         if user_input.startswith("/") and handle_command(state, user_input, tools):
             continue
+
+        # Una volta per turno, mai dentro il ciclo di step: l'agente puo' aver riscritto
+        # memory.md e il system prompt va aggiornato, ma cambiarlo a ogni step
+        # distruggerebbe il prompt caching del provider.
+        if state.refresh_system_prompt():
+            print("[Memoria] memory.md aggiornata: ricaricata nel contesto.")
 
         state.messages.append({"role": "user", "content": user_input})
         state.logger.log("user", content=user_input)

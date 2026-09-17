@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from ernesto.config import MEMORY_LIMIT
 from ernesto.context import (
     AGENT_SYSTEM_PROMPT,
     compose_system_prompt,
     extract_env_vars,
     load_context,
     parse_soul,
+    reload_memory,
     summary_line,
+    system_prompt_parts,
     verify_env_vars,
 )
 
@@ -36,7 +41,7 @@ def test_no_context_files(workdir: Path) -> None:
     assert ctx.soul.content is None
     assert ctx.agent.content is None
     assert ctx.credentials.content is None
-    assert summary_line(ctx) == "Contesto: soul.md ✗ · agent.md ✗ · credentials.md ✗"
+    assert summary_line(ctx) == "Contesto: soul.md ✗ · agent.md ✗ · credentials.md ✗ · memory.md ✗"
     # Il system prompt di default resta composto comunque
     assert AGENT_SYSTEM_PROMPT in compose_system_prompt(ctx)
 
@@ -47,7 +52,7 @@ def test_context_files_present(workdir: Path) -> None:
     (workdir / "agent.md").write_text("Usa sempre pytest.", encoding="utf-8")
     (workdir / "credentials.md").write_text(CREDENTIALS_SAMPLE, encoding="utf-8")
     ctx = load_context(workdir)
-    assert summary_line(ctx) == "Contesto: soul.md ✓ · agent.md ✓ · credentials.md ✓"
+    assert summary_line(ctx) == "Contesto: soul.md ✓ · agent.md ✓ · credentials.md ✓ · memory.md ✗"
     prompt = compose_system_prompt(ctx)
     assert "Sei allegro." in prompt
     assert "## Istruzioni operative del progetto" in prompt
@@ -124,3 +129,55 @@ def test_verify_env_vars_openrouter_missing_fatal() -> None:
     # e anche con credentials.md assente (lista vuota)
     check = verify_env_vars([], {})
     assert check.fatal_missing == ["OPENROUTER_API_KEY"]
+
+
+# ---------------------------------------------------------------------------
+# memory.md
+# ---------------------------------------------------------------------------
+
+
+def test_memory_in_system_prompt(workdir: Path) -> None:
+    """La memoria di lavoro entra nel system prompt con la sua etichetta."""
+    (workdir / "memory.md").write_text("Il cliente preferisce PostgreSQL.", encoding="utf-8")
+    ctx = load_context(workdir)
+    prompt = compose_system_prompt(ctx)
+    assert "Il cliente preferisce PostgreSQL." in prompt
+    assert "Memoria di lavoro" in prompt
+    assert any(label.startswith("memory.md") for label, _ in system_prompt_parts(ctx))
+
+
+def test_memory_absent_no_part(workdir: Path) -> None:
+    """Senza il file nessuna parte lo menziona: chi non la usa non paga token."""
+    ctx = load_context(workdir)
+    assert not any(label.startswith("memory.md") for label, _ in system_prompt_parts(ctx))
+
+
+def test_memory_only_from_workdir(workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Una memoria in ~/.config non deve rientrare negli altri progetti."""
+    fake_config = tmp_path / "config-home"
+    fake_config.mkdir()
+    (fake_config / "memory.md").write_text("memoria di un altro progetto", encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    ctx = load_context(workdir)
+    assert ctx.memory.content is None
+
+
+def test_memory_truncated(workdir: Path) -> None:
+    """Oltre il tetto la memoria viene troncata con l'indicazione di potarla."""
+    (workdir / "memory.md").write_text("x" * (MEMORY_LIMIT * 3), encoding="utf-8")
+    ctx = load_context(workdir)
+    parte = next(text for label, text in system_prompt_parts(ctx) if label.startswith("memory.md"))
+    assert "troncata" in parte
+    assert len(parte) < MEMORY_LIMIT + 300
+
+
+def test_reload_memory_detects_change(workdir: Path) -> None:
+    """La rilettura segnala creazione e modifica, non i casi in cui nulla e' cambiato."""
+    ctx = load_context(workdir)
+    assert reload_memory(ctx) is False
+    (workdir / "memory.md").write_text("primo fatto", encoding="utf-8")
+    assert reload_memory(ctx) is True
+    assert reload_memory(ctx) is False
+    (workdir / "memory.md").write_text("fatto aggiornato", encoding="utf-8")
+    assert reload_memory(ctx) is True
+    assert "fatto aggiornato" in (ctx.memory.content or "")

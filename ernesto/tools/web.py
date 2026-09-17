@@ -115,7 +115,9 @@ class _TextExtractor(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in self.SKIP:
             self._skip_depth += 1
-        elif tag == "title":
+        # Solo il primo <title> fuori dai tag saltati: le icone SVG ne hanno uno ciascuna
+        # e finirebbero tutte accodate al titolo della pagina.
+        elif tag == "title" and not self._skip_depth and not self.title:
             self._in_title = True
         elif tag in self.BLOCKS:
             self._parts.append("\n")

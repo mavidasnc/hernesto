@@ -47,10 +47,10 @@ Opzioni (`python ernesto.py --help` per l'elenco completo):
 | `--reasoning low\|medium\|high\|xhigh` | Livello di reasoning (default `medium`) |
 | `--no-mcp` | Disabilita l'integrazione MCP |
 
-## Configurazione: i tre file di contesto
+## Configurazione: i file di contesto
 
 All'avvio ernesto legge dalla cartella di lavoro (fallback `~/.config/ernesto/`)
-tre file markdown che definiscono identità, istruzioni e credenziali del progetto:
+i file markdown che definiscono identità, istruzioni, memoria e credenziali del progetto:
 
 - **`soul.md`** — personalità e tono dell'assistente. Preposto al system prompt;
   con una riga frontmatter `mode: replace` lo sostituisce del tutto.
@@ -62,8 +62,13 @@ tre file markdown che definiscono identità, istruzioni e credenziali del proget
   mai committato). All'avvio ernesto verifica che le variabili dichiarate
   esistano: `OPENROUTER_API_KEY` mancante è un errore fatale, le altre
   producono un avviso e il tool corrispondente risponde con un errore leggibile.
+- **`memory.md`** — memoria di lavoro del progetto: fatti durevoli e decisioni che
+  l'agente stesso scrive e pota con `edit_file`. Cercata **solo** nella cartella di
+  lavoro (non in `~/.config/ernesto/`), riletta a ogni turno, troncata a 4000 caratteri
+  perché il system prompt viaggia in ogni richiesta. Sopravvive a `/clear` e alle
+  sessioni successive.
 
-I tre file sono parte del contesto inviato al modello e sono normalmente
+I file sono parte del contesto inviato al modello e sono normalmente
 leggibili e scrivibili dagli strumenti `read_file`/`write_file`.
 
 ## Strumenti disponibili
@@ -76,6 +81,7 @@ leggibili e scrivibili dagli strumenti `read_file`/`write_file`.
 | `edit_file` | Sostituzione esatta chirurgica (`old_string` → `new_string`) |
 | `run_command` | Esegue un comando di shell nella cartella di lavoro |
 | `brave_search` | Ricerca web via Brave Search API |
+| `fetch_url` | Scarica una pagina e ne restituisce il testo leggibile |
 | `send_email` | Invio email via Resend |
 | `mcp__<server>__<tool>` | Strumenti da server MCP configurati in `mcp.json` (opzionale) |
 
@@ -92,6 +98,7 @@ parte comunque con un avviso.
 | `/model` | Cambia il modello attivo (azzera la conversazione) |
 | `/context` | Riepilogo del contesto: modello, reasoning, token, strumenti, stato |
 | `/clear` | Azzera la conversazione (mantiene log e conteggi cumulativi) |
+| `/compact` | Riassume subito i risultati strumento in storia (`/compact N` preserva N giri) |
 | `/yolo` | Attiva/disattiva il bypass delle conferme |
 | `/tools` | Elenca gli strumenti registrati (nativi + MCP) |
 | `/log` | Percorso del log di sessione e riepilogo |
@@ -110,8 +117,14 @@ Il prompt mostra sempre i cumulativi di sessione: `Tu [24.1k in · 6.3k out · $
 
 ## Policy di sicurezza
 
-- **Sandbox filesystem**: ogni path è risolto con `realpath` e deve restare
-  dentro la cartella di lavoro, sempre (anche con `--yolo`).
+- **Sandbox filesystem**: per `list_files`, `read_file`, `write_file` e `edit_file`
+  ogni path è risolto con `realpath` e deve restare dentro la cartella di lavoro,
+  sempre (anche con `--yolo`). **`run_command` non è sandboxato**: esegue una shell
+  arbitraria con la sola `cwd` sulla workdir, quindi un comando può scrivere ovunque
+  l'utente abbia permessi. La difesa lì è la conferma, non un confine: i percorsi
+  assoluti e le risalite con `..` fanno scattare una richiesta di conferma (euristica
+  sul testo del comando, aggirabile: serve contro la disattenzione, non contro un
+  modello che voglia eluderla).
 - **Conferme**: prima di `send_email` e di comandi che matchano la denylist
   (`rm -rf`, `sudo`, `git push`, `git reset --hard`, `docker system prune`, …)
   viene chiesta conferma. La denylist è estendibile in `config.yaml`
@@ -144,8 +157,8 @@ ernesto/
   cli.py              # typer + REPL + comandi slash
   agent.py            # loop agentico (streaming + tool calls)
   models.py           # registry modelli + prezzi live
-  context.py          # soul.md / agent.md / credentials.md
-  session.py          # stato, log JSONL, costi
+  context.py          # soul.md / agent.md / memory.md / credentials.md
+  session.py          # stato, log JSONL, costi, compattazione storia
   config.py           # costanti, .env, config.yaml
   mcp_client.py       # integrazione MCP opzionale
   tools/              # registry + filesystem, shell, web, mail

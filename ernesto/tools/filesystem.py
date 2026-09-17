@@ -12,7 +12,13 @@ from . import Tool
 if TYPE_CHECKING:
     from ..session import SessionState
 
-SANDBOX_ERROR = "ERRORE: path fuori dalla sandbox"
+def sandbox_error(workdir: Path) -> str:
+    """Errore di sandbox che dice al modello come rimediare.
+
+    I messaggi d'errore sono l'unico canale con cui gli strumenti insegnano al modello a
+    usarli: senza la workdir nel testo, il modello deve indovinare dove puo' scrivere.
+    """
+    return f"ERRORE: path fuori dalla sandbox. Usa percorsi relativi dentro la cartella di lavoro ({workdir})."
 
 # Cartelle "rumore" escluse dalla ricorsione: contengono migliaia di file
 # generati che inonderebbero il contesto del modello senza alcuna utilita'.
@@ -63,7 +69,7 @@ class ListFilesTool(Tool):
     def run(self, path: str = ".", recursive: bool = False, **_: Any) -> str:
         target = resolve_in_sandbox(self._state.workdir, path)
         if target is None:
-            return SANDBOX_ERROR
+            return sandbox_error(self._state.workdir)
         try:
             if not target.exists():
                 return f"ERRORE: percorso inesistente: {path}"
@@ -109,7 +115,7 @@ class ReadFileTool(Tool):
     def run(self, path: str, offset: int = 0, limit: int = 500, **_: Any) -> str:
         target = resolve_in_sandbox(self._state.workdir, path)
         if target is None:
-            return SANDBOX_ERROR
+            return sandbox_error(self._state.workdir)
         try:
             raw = target.read_bytes()
         except FileNotFoundError:
@@ -149,7 +155,7 @@ class WriteFileTool(Tool):
     def run(self, path: str, content: str, **_: Any) -> str:
         target = resolve_in_sandbox(self._state.workdir, path)
         if target is None:
-            return SANDBOX_ERROR
+            return sandbox_error(self._state.workdir)
         if self._state.dry_run:
             return f"DRY-RUN: write_file simulato su {path} ({len(content)} caratteri)"
         try:
@@ -185,7 +191,7 @@ class EditFileTool(Tool):
     def run(self, path: str, old_string: str, new_string: str, replace_all: bool = False, **_: Any) -> str:
         target = resolve_in_sandbox(self._state.workdir, path)
         if target is None:
-            return SANDBOX_ERROR
+            return sandbox_error(self._state.workdir)
         try:
             text = target.read_text(encoding="utf-8")
         except FileNotFoundError:

@@ -10,7 +10,7 @@ import pytest
 from ernesto.config import DEFAULT_DENY_PATTERNS, STDERR_OUTPUT_LIMIT, TOOL_OUTPUT_LIMIT
 from ernesto.session import SessionState
 from ernesto.tools import ConfirmFn
-from ernesto.tools.shell import RunCommandTool, find_deny_match
+from ernesto.tools.shell import RunCommandTool, find_deny_match, find_escaping_path
 
 
 def _make_tool(
@@ -155,3 +155,38 @@ def test_ctrl_c_kills_process_tree(mock_popen: MagicMock, mock_kill: MagicMock, 
     with pytest.raises(KeyboardInterrupt):
         _make_tool(state).run(command="sleep 99", timeout=60)
     mock_kill.assert_called_once_with(proc)
+
+
+def test_guardia_path_assoluto_chiede_conferma(state: SessionState) -> None:
+    """run_command non e' sandboxato: un percorso assoluto passa dalla conferma."""
+    with patch("ernesto.tools.shell.subprocess.Popen") as mock_popen:
+        result = _make_tool(state).run(command=r"curl -o C:\Windows\preso.txt https://e.com")
+    assert result.startswith("ERRORE")
+    assert "fuori dalla cartella di lavoro" in result
+    mock_popen.assert_not_called()
+
+
+@patch("ernesto.tools.shell.subprocess.Popen")
+def test_guardia_path_relativo_dentro_workdir_non_scatta(mock_popen: MagicMock, state: SessionState) -> None:
+    """I comandi normali con percorsi relativi non vengono disturbati."""
+    mock_popen.return_value = _proc(stdout="ok")
+    result = _make_tool(state).run(command="python -m pytest tests/test_shell.py -q")
+    assert result.startswith("exit 0")
+
+
+@patch("ernesto.tools.shell.subprocess.Popen")
+def test_guardia_saltata_con_yolo(mock_popen: MagicMock, state: SessionState) -> None:
+    """Con yolo la guardia non chiede nulla, come le altre conferme."""
+    mock_popen.return_value = _proc(stdout="ok")
+    state.yolo = True
+    result = _make_tool(state).run(command="cat /etc/passwd")
+    assert result.startswith("exit 0")
+
+
+def test_guardia_riconosce_i_frammenti_attesi() -> None:
+    """Path assoluti e risalite vengono intercettati, i percorsi relativi no."""
+    assert find_escaping_path("type C:/Users/tizio/segreti.txt") is not None
+    assert find_escaping_path("cat /etc/passwd") is not None
+    assert find_escaping_path("cp dati.csv ../fuori/") is not None
+    assert find_escaping_path("pytest tests/ -q") is None
+    assert find_escaping_path("npm run build") is None

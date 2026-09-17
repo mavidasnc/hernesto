@@ -36,8 +36,11 @@ Viene **iniettato in ogni strumento** al momento della costruzione: è così che
 conoscono la workdir della sandbox e i flag di sicurezza. Non esiste stato globale.
 
 Il system prompt è composto da `ernesto/context.py` (`load_context` →
-`compose_system_prompt`): prompt di base + `soul.md` + `agent.md` + `credentials.md`,
-cercati prima nella workdir e poi in `~/.config/ernesto/`. `soul.md` con frontmatter
+`compose_system_prompt`): prompt di base + `soul.md` + `agent.md` + `memory.md` +
+`credentials.md`, cercati prima nella workdir e poi in `~/.config/ernesto/` —
+`memory.md` fa eccezione ed è solo per progetto. È l'unico file di contesto che l'agente
+scrive da sé: `refresh_system_prompt()` lo rilegge una volta per turno nel REPL (mai
+dentro il ciclo di step, che distruggerebbe il prompt caching). `soul.md` con frontmatter
 `mode: replace` sostituisce il prompt di base invece di accodarsi.
 
 Gli strumenti stanno in `ernesto/tools/`: la classe base `Tool` e la factory
@@ -51,9 +54,15 @@ mancano, la sessione parte lo stesso con un avviso.
 
 - **Un tool non lancia mai.** `Tool.run()` restituisce sempre una stringa; gli errori
   diventano `"ERRORE: ..."` e tornano al modello come contenuto del messaggio tool.
-- **Ogni path passa da `resolve_in_sandbox()`** (`tools/filesystem.py`): risoluzione con
-  `realpath`, quindi anche i symlink che escono dalla workdir vengono respinti. Il
-  vincolo vale sempre, anche con `--yolo`.
+- **Ogni path degli strumenti filesystem passa da `resolve_in_sandbox()`**
+  (`tools/filesystem.py`): risoluzione con `realpath`, quindi anche i symlink che escono
+  dalla workdir vengono respinti, sempre, anche con `--yolo`. **`run_command` è fuori da
+  questa garanzia**: esegue una shell arbitraria e può scrivere ovunque. Lì la difesa è
+  `find_escaping_path()` in `tools/shell.py`, che chiede conferma su percorsi assoluti e
+  `..`: euristica sul testo del comando, non un confine.
+- **La compattazione riscrive `content`, non rimuove mai messaggi**
+  (`compact_tool_results` in `session.py`): così le coppie assistant-con-`tool_calls` /
+  `tool` restano accoppiate e `rewind_index` in `run_turn` resta valido.
 - **JSON mode e `tools` non vanno mai inviati insieme.** Con
   `response_format: json_object` alcuni provider descrivono la tool call in JSON testuale
   invece di eseguirla; `run_turn` omette i `tools` quando `json_mode` è attivo, e ci sono

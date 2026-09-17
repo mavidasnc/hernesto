@@ -8,9 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .config import LOG_CONTENT_LIMIT
-from .context import Context, compose_system_prompt
+from .config import COMPACT_HEAD_CHARS, COMPACT_KEEP_RECENT, COMPACT_MIN_CHARS, LOG_CONTENT_LIMIT
+from .context import Context, compose_system_prompt, reload_memory
 from .models import ModelConfig
+
+COMPACT_PREFIX = "[compattato]"
 
 
 def mask_secret(value: str) -> str:
@@ -49,6 +51,75 @@ class SessionLogger:
                 fh.write(json.dumps(event, ensure_ascii=False) + "\n")
         except OSError:
             pass  # il log non deve mai interrompere la sessione
+
+
+def _tool_call_args(messages: list[dict[str, Any]]) -> dict[str, str]:
+    """Mappa tool_call_id -> argomenti JSON, letti dagli assistant message."""
+    args: dict[str, str] = {}
+    for msg in messages:
+        for call in msg.get("tool_calls") or []:
+            raw = (call.get("function") or {}).get("arguments") or ""
+            args[call.get("id", "")] = raw[:120]
+    return args
+
+
+def _digest(content: str, name: str, args: str) -> str:
+    """Riassunto deterministico di un risultato strumento.
+
+    Non deve essere fedele: deve essere un puntatore. Il contenuto integrale resta nel
+    log JSONL e i file si rileggono con read_file, quindi conservare nome, argomenti,
+    dimensione, testa e ultima riga basta al modello per sapere cosa ha gia' fatto.
+    """
+    lines = content.splitlines()
+    head = content[:COMPACT_HEAD_CHARS].strip()
+    # L'ultima riga va limitata: un output senza a capo (JSON, HTML) sarebbe tutto "coda"
+    # e il riassunto finirebbe per essere lungo quanto l'originale.
+    tail = lines[-1].strip()[-COMPACT_HEAD_CHARS:] if lines else ""
+    parts = [f"{COMPACT_PREFIX} {name} {args} · {len(content)} caratteri"]
+    if head:
+        parts.append(f"inizio: {head}")
+    if tail and tail not in head:
+        parts.append(f"fine: {tail}")
+    parts.append("…[contenuto integrale nel log di sessione; rileggi la fonte se serve]")
+    return "\n".join(parts)
+
+
+def compact_tool_results(
+    messages: list[dict[str, Any]],
+    keep_recent: int = COMPACT_KEEP_RECENT,
+) -> tuple[int, int]:
+    """Riassume i risultati degli strumenti piu' vecchi di `keep_recent` giri.
+
+    Riscrive SOLO il campo `content` dei messaggi con role="tool": nessun messaggio viene
+    rimosso o spostato, nessun ruolo cambia. Cosi' le coppie assistant-con-tool_calls /
+    tool restano accoppiate e `rewind_index` in run_turn resta valido.
+
+    Il confine e' calcolato a granularita' di assistant message, non di indice assoluto:
+    i risultati di uno stesso assistant sono tutti compattati o tutti intatti.
+
+    Restituisce (messaggi compattati, token stimati risparmiati).
+    """
+    turns = [i for i, msg in enumerate(messages) if msg.get("tool_calls")]
+    if len(turns) <= keep_recent:
+        return 0, 0
+    cutoff = turns[-keep_recent] if keep_recent else len(messages)
+    args_by_id = _tool_call_args(messages)
+    compacted = 0
+    saved = 0
+    for msg in messages[:cutoff]:
+        if msg.get("role") != "tool":
+            continue
+        content = str(msg.get("content") or "")
+        # Gia' compattato, troppo corto o errore: lasciare stare. Gli errori sono brevi e
+        # servono al modello per non ripetere lo stesso sbaglio.
+        if content.startswith(COMPACT_PREFIX) or len(content) < COMPACT_MIN_CHARS or content.startswith("ERRORE"):
+            continue
+        name = str(msg.get("name") or "strumento")
+        digest = _digest(content, name, args_by_id.get(str(msg.get("tool_call_id")), ""))
+        saved += estimate_tokens(content) - estimate_tokens(digest)
+        msg["content"] = digest
+        compacted += 1
+    return compacted, max(saved, 0)
 
 
 def fmt_tokens(n: int) -> str:
@@ -90,10 +161,24 @@ class SessionState:
     total_completion_tokens: int = 0
     total_cost: float = 0.0
     tool_calls_count: int = 0
+    compacted_count: int = 0    # risultati strumento riassunti nella sessione
+    compacted_tokens: int = 0   # token stimati risparmiati (cumulativo)
 
     def system_prompt(self) -> str:
         """System prompt completo per la configurazione corrente."""
         return compose_system_prompt(self.context, self.json_mode)
+
+    def refresh_system_prompt(self) -> bool:
+        """Ricarica memory.md e riscrive messages[0] se e' cambiata. True se aggiornato.
+
+        Va chiamata una volta per turno, non a ogni step: cambiare il prefisso del prompt
+        dentro il ciclo distruggerebbe il prompt caching del provider.
+        """
+        if not reload_memory(self.context):
+            return False
+        if self.messages and self.messages[0].get("role") == "system":
+            self.messages[0]["content"] = self.system_prompt()
+        return True
 
     def reset_messages(self) -> None:
         """Azzera la conversazione mantenendo il system prompt."""

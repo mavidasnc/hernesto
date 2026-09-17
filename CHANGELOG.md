@@ -5,11 +5,14 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
-## [Non rilasciato]
+## [0.2.0] - 2026-09-17
 
 ### Aggiunto
 - **Strumento `fetch_url`**: scarica una pagina web e restituisce il testo leggibile, senza HTML, script e menu (parser basato su `html.parser` della stdlib, nessuna nuova dipendenza). Prima, per leggere un risultato di ricerca, il modello poteva solo usare `curl` da `run_command` e riceveva HTML grezzo troncato a meta'.
 - **`RESEND_FROM_NAME`**: nome visualizzato del mittente usato come default da `send_email` quando il modello non passa `from_name` (prima il default era la costante `Chat CLI` e la variabile veniva ignorata). Documentata in `credentials.md` insieme ai vincoli sul dominio verificato.
+- **Compattazione della storia**: oltre i 30.000 token stimati i risultati degli strumenti piu' vecchi di tre giri diventano un riassunto deterministico (nome dello strumento, argomenti, dimensione, testa e coda), con il contenuto integrale che resta nel log JSONL. La compattazione riscrive solo il campo `content` dei messaggi `tool`: non rimuove nulla, quindi le coppie assistant/tool e il rewind su errore restano intatti. Comando `/compact [giri]` per farla subito; `/context` e `/log` mostrano soglia e token risparmiati.
+- **Memoria di lavoro `memory.md`**: quarto file di contesto, cercato solo nella cartella di lavoro, che l'agente scrive e pota da se' con `edit_file`. Rientra nel system prompt a ogni turno (non a ogni step, per non rompere il prompt caching), sopravvive a `/clear` e alle sessioni successive, ed e' troncato a 4000 caratteri.
+- **Guardia sui percorsi in `run_command`**: percorsi assoluti e risalite con `..` fanno scattare una richiesta di conferma. La sandbox non ha mai coperto `run_command`, che esegue una shell arbitraria: README e `CLAUDE.md` ora lo dicono invece di promettere un confine che non c'era.
 
 ### Corretto
 - **`run_command` non perde piu' l'output non decodificabile**: la `Popen` usava `text=True` senza `encoding`, quindi la decodifica avveniva nella codifica locale (`cp1252` su Windows) dentro il thread lettore di `communicate()`; l'eccezione non risaliva al chiamante e lo strumento restituiva `exit 0` con output vuoto. In una sessione reale il modello ha interpretato il vuoto come "pagina protetta da JS" e ha bruciato quattro step e ~18k token. Ora `encoding="utf-8", errors="replace"`.
@@ -18,6 +21,7 @@ e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/)
 ### Cambiato
 - **`run_command` separa stdout e stderr** (prima `stderr=STDOUT` li fondeva): con entrambi presenti l'output e' etichettato, con tetti di troncamento indipendenti (8000 caratteri per stdout, 2000 per stderr), cosi' il rumore di npm o pip non mangia il segnale.
 - **`run_command` non eredita piu' lo stdin del terminale** (`stdin=DEVNULL`): un comando interattivo fallisce subito con un errore leggibile invece di restare appeso fino al timeout di 120 secondi consumando l'input dell'utente.
+- **L'errore di sandbox dice come rimediare**: include la cartella di lavoro e ricorda che i percorsi vanno espressi relativi a essa. I messaggi d'errore sono l'unico canale con cui gli strumenti insegnano al modello a usarli.
 
 ## [0.1.3] - 2026-09-16
 

@@ -6,8 +6,21 @@ from types import SimpleNamespace
 from typing import ClassVar
 
 from ernesto.agent import run_tool_call, run_turn
+from ernesto.config import COMPACT_THRESHOLD_TOKENS
 from ernesto.models import ModelConfig
+from ernesto.session import COMPACT_PREFIX, SessionState
 from ernesto.tools import Tool
+
+
+def _storia_con_tool(turni: int, content: str = "contenuto\n" * 40) -> list[dict]:
+    """Giri assistant(tool_calls) + risultato tool, per i test di compattazione."""
+    messages: list[dict] = []
+    for t in range(turni):
+        call = {"id": f"c{t}", "type": "function",
+                "function": {"name": "read_file", "arguments": '{"path": "a.py"}'}}
+        messages.append({"role": "assistant", "content": None, "tool_calls": [call]})
+        messages.append({"role": "tool", "tool_call_id": call["id"], "name": "read_file", "content": content})
+    return messages
 
 
 class EchoTool(Tool):
@@ -89,6 +102,7 @@ def _fake_state(json_mode: bool) -> SimpleNamespace:
         logger=None,
         tool_calls_count=0,
         record_usage=lambda *a: None,
+        history_token_estimate=lambda: 0,
     )
 
 
@@ -107,3 +121,23 @@ def test_tools_sent_without_json_mode(capsys: object) -> None:
     run_turn(_fake_state(json_mode=False), _fake_client(captured), [EchoTool()])
     assert "tools" in captured
     assert captured["tools"][0]["function"]["name"] == "echo"
+
+
+def test_auto_compact_below_threshold_noop(state: SessionState) -> None:
+    """Sotto soglia la storia arriva all'API identica: nessun cambiamento percepito."""
+    state.messages.extend(_storia_con_tool(turni=6))
+    prima = [str(m.get("content") or "") for m in state.messages]
+    captured: dict = {}
+    run_turn(state, _fake_client(captured), [EchoTool()])
+    assert state.compacted_count == 0
+    assert [str(m.get("content") or "") for m in captured["messages"]][: len(prima)] == prima
+
+
+def test_auto_compact_triggers_above_threshold(state: SessionState) -> None:
+    """Sopra soglia i risultati vecchi partono gia' riassunti."""
+    state.messages.extend(_storia_con_tool(turni=8, content="x" * (COMPACT_THRESHOLD_TOKENS // 2)))
+    captured: dict = {}
+    run_turn(state, _fake_client(captured), [EchoTool()])
+    assert state.compacted_count > 0
+    assert state.compacted_tokens > 0
+    assert any(COMPACT_PREFIX in str(m.get("content") or "") for m in captured["messages"])

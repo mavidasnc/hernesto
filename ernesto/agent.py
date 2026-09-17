@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from openai import APIConnectionError, APIError, APIStatusError
 
-from .config import MAX_AGENT_STEPS
-from .session import fmt_tokens
+from .config import COMPACT_THRESHOLD_TOKENS, MAX_AGENT_STEPS
+from .session import compact_tool_results, fmt_tokens
 from .tools import tool_schemas
 
 if TYPE_CHECKING:
@@ -101,6 +101,16 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
     rewind_index = len(state.messages) - 1  # posizione dell'ultimo user message
 
     for step in range(1, MAX_AGENT_STEPS + 1):
+        # Compattazione prima della chiamata: il risparmio vale gia' sullo step che la
+        # innesca. Non cambia la lunghezza della lista, quindi rewind_index resta valido.
+        if state.history_token_estimate() > COMPACT_THRESHOLD_TOKENS:
+            compacted, saved = compact_tool_results(state.messages)
+            if compacted:
+                state.compacted_count += compacted
+                state.compacted_tokens += saved
+                print(f"\n[Compattazione] {compacted} risultati strumento riassunti · ~{fmt_tokens(saved)} tok in meno")
+                if state.logger:
+                    state.logger.log("compact", messages=compacted, saved_tokens=saved)
         call_kwargs: dict[str, Any] = {
             "model": state.model.id,
             "messages": state.messages,

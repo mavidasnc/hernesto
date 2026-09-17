@@ -14,6 +14,19 @@ LOG_CONTENT_LIMIT = 4000
 MAX_LIST_ENTRIES = 500
 MCP_TOOL_TIMEOUT = 60
 
+# Compattazione della storia: sopra la soglia i risultati degli strumenti piu' vecchi
+# diventano un riassunto deterministico. La soglia e' in token stimati e non in numero di
+# step perche' il costo dipende dai token: venti list_files sono innocui, tre read_file da
+# 8000 caratteri no.
+COMPACT_THRESHOLD_TOKENS = 30_000
+COMPACT_KEEP_RECENT = 3     # giri assistant+tool mantenuti integrali
+COMPACT_MIN_CHARS = 500     # sotto questa soglia il riassunto non risparmierebbe nulla
+COMPACT_HEAD_CHARS = 300    # testa del contenuto conservata nel riassunto
+
+# Tetto della memoria di lavoro (memory.md) dentro il system prompt, che viaggia in ogni
+# richiesta di ogni step: senza un limite duro si gonfierebbe senza freno.
+MEMORY_LIMIT = 4000
+
 # Pattern pericolosi di default per run_command (regex): richiedono conferma.
 DEFAULT_DENY_PATTERNS: list[str] = [
     r"rm\s+-rf",

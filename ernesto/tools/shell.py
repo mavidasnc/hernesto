@@ -15,6 +15,15 @@ if TYPE_CHECKING:
     from ..session import SessionState
 
 
+# Frammenti che indicano un'uscita dalla cartella di lavoro: path assoluti stile Windows
+# (C:\... o C:/...), path assoluti POSIX di sistema, e risalite con "..".
+_ESCAPE_PATTERNS = [
+    re.compile(r"\b[A-Za-z]:[\\/][^\s\"']*"),
+    re.compile(r"(?<![\w./])/(?:etc|usr|bin|var|root|home|tmp|opt|Users)(?:/[^\s\"']*)?"),
+    re.compile(r"\.\.[\\/]"),
+]
+
+
 def find_deny_match(command: str, patterns: list[str]) -> str | None:
     """Restituisce il primo pattern della denylist che matcha il comando, o None."""
     for pattern in patterns:
@@ -23,6 +32,20 @@ def find_deny_match(command: str, patterns: list[str]) -> str | None:
                 return pattern
         except re.error:
             continue  # pattern malformato in config.yaml: ignorato
+    return None
+
+
+def find_escaping_path(command: str) -> str | None:
+    """Primo frammento del comando che sembra uscire dalla cartella di lavoro, o None.
+
+    La sandbox vale per gli strumenti filesystem, non per run_command, che esegue una
+    shell arbitraria: questa e' una guardia dichiaratamente imperfetta (si aggira in mille
+    modi e ha falsi positivi su comandi legittimi), quindi NON blocca, chiede conferma.
+    """
+    for pattern in _ESCAPE_PATTERNS:
+        match = pattern.search(command)
+        if match:
+            return match.group(0)
     return None
 
 
@@ -100,6 +123,17 @@ class RunCommandTool(Tool):
             )
             if not ok:
                 return "ERRORE: comando rifiutato dall'utente (denylist di sicurezza)"
+        escaping = find_escaping_path(command)
+        if escaping is not None and not self._state.yolo:
+            ok = self._confirm(
+                f"Il comando cita un percorso fuori dalla cartella di lavoro ({escaping!r}). Eseguire comunque?",
+                preview=command,
+            )
+            if not ok:
+                return (
+                    "ERRORE: comando rifiutato dall'utente (percorso fuori dalla cartella di lavoro). "
+                    f"Lavora con percorsi relativi dentro {self._state.workdir}."
+                )
         # Popen (invece di subprocess.run) per poter uccidere l'albero dei processi
         # su timeout e su Ctrl+C: il gruppo di processi separato evita che il segnale
         # arrivi direttamente al figlio bypassando la nostra gestione.

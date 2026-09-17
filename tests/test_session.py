@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ernesto.session import SessionLogger, fmt_tokens, mask_secret
+from ernesto.session import SessionLogger, SessionState, fmt_tokens, mask_secret
 
 SECRET = "sk-or-v1-abcdef1234567890segreto9999"
 
@@ -50,3 +50,22 @@ def test_fmt_tokens() -> None:
     assert fmt_tokens(340) == "340"
     assert fmt_tokens(24100) == "24.1k"
     assert fmt_tokens(1_200_000) == "1.2M"
+
+
+def test_refresh_system_prompt_updates_message_zero(state: SessionState) -> None:
+    """La memoria scritta dall'agente rientra nel prompt senza toccare la storia."""
+    state.messages.append({"role": "user", "content": "domanda"})
+    prima = list(state.messages[1:])
+    (state.workdir / "memory.md").write_text("Deploy solo il martedi'.", encoding="utf-8")
+    assert state.refresh_system_prompt() is True
+    assert "Deploy solo il martedi'." in state.messages[0]["content"]
+    assert state.messages[1:] == prima
+    assert state.refresh_system_prompt() is False
+
+
+def test_clear_keeps_memory(state: SessionState) -> None:
+    """Dopo /clear la memoria e' ancora nel system prompt."""
+    (state.workdir / "memory.md").write_text("Fatto da ricordare.", encoding="utf-8")
+    state.refresh_system_prompt()
+    state.reset_messages()
+    assert "Fatto da ricordare." in state.messages[0]["content"]

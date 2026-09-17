@@ -21,7 +21,7 @@ def test_sandbox_path_traversal_parent(state: SessionState, tmp_path: Path) -> N
     """Un path con ../ che esce dalla workdir viene rifiutato."""
     (tmp_path / "secret.txt").write_text("segreto", encoding="utf-8")
     result = ReadFileTool(state).run(path="../secret.txt")
-    assert result == "ERRORE: path fuori dalla sandbox"
+    assert result.startswith("ERRORE: path fuori dalla sandbox")
 
 
 def test_sandbox_path_traversal_absolute(state: SessionState, tmp_path: Path) -> None:
@@ -29,7 +29,7 @@ def test_sandbox_path_traversal_absolute(state: SessionState, tmp_path: Path) ->
     outside = tmp_path / "secret.txt"
     outside.write_text("segreto", encoding="utf-8")
     result = ReadFileTool(state).run(path=str(outside))
-    assert result == "ERRORE: path fuori dalla sandbox"
+    assert result.startswith("ERRORE: path fuori dalla sandbox")
 
 
 def test_sandbox_path_traversal_symlink(state: SessionState, tmp_path: Path) -> None:
@@ -42,7 +42,7 @@ def test_sandbox_path_traversal_symlink(state: SessionState, tmp_path: Path) -> 
     except OSError:
         pytest.skip("symlink non supportati su questa macchina")
     result = ReadFileTool(state).run(path="link.txt")
-    assert result == "ERRORE: path fuori dalla sandbox"
+    assert result.startswith("ERRORE: path fuori dalla sandbox")
 
 
 def test_resolve_in_sandbox_ok(state: SessionState) -> None:
@@ -112,3 +112,10 @@ def test_write_file_dry_run(state: SessionState) -> None:
     result = WriteFileTool(state).run(path="nope.txt", content="contenuto")
     assert result.startswith("DRY-RUN")
     assert not (state.workdir / "nope.txt").exists()
+
+
+def test_errore_sandbox_nomina_workdir(state: SessionState) -> None:
+    """L'errore dice dove si puo' scrivere, non solo che il path e' sbagliato."""
+    result = WriteFileTool(state).run(path="../fuori.txt", content="x")
+    assert str(state.workdir) in result
+    assert "relativi" in result
