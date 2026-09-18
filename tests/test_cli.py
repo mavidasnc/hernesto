@@ -16,10 +16,12 @@ from ernesto.cli import (
     cmd_step,
     compose_prompt,
     handle_command,
+    make_confirm_fn,
     resolve_json_mode,
 )
 from ernesto.config import MAX_AGENT_STEPS
 from ernesto.models import ModelConfig
+from ernesto.tools import LEVEL_DESTRUCTIVE, LEVEL_EXTERNAL, LEVEL_WARNING
 
 
 def test_ogni_comando_ha_una_descrizione() -> None:
@@ -143,3 +145,47 @@ def test_cartella_al_posto_del_file(tmp_path: Path) -> None:
 def test_budget_report_cita_spesa_e_tetto() -> None:
     stato = SimpleNamespace(total_cost=2.13, cost_limit=2.0)
     assert budget_report(stato) == "limite di spesa raggiunto: $2.1300 su $2.0000"
+
+
+def _stato_non_presidiato(**kwargs: object) -> SimpleNamespace:
+    """Stato minimo per provare la politica delle conferme automatiche."""
+    base = {"yolo": False, "unattended": True, "abort_reason": "", "logger": None}
+    base.update(kwargs)
+    return SimpleNamespace(**base)
+
+
+def test_non_presidiata_approva_le_azioni_ordinarie() -> None:
+    """Una conferma che nessuno puo' dare non protegge: bloccare spinge solo il modello
+    a rifare la stessa cosa con run_command."""
+    stato = _stato_non_presidiato()
+    confirm = make_confirm_fn(stato)
+    assert confirm("Inviare questa email?", level=LEVEL_EXTERNAL) is True
+    assert confirm("Percorso fuori dalla workdir, eseguire?", level=LEVEL_WARNING) is True
+    assert stato.abort_reason == ""
+
+
+def test_non_presidiata_nega_il_distruttivo_e_ferma_tutto() -> None:
+    """Il rifiuto non torna al modello come errore da aggirare: interrompe l'esecuzione."""
+    stato = _stato_non_presidiato()
+    assert make_confirm_fn(stato)("Eseguire rm -rf?", level=LEVEL_DESTRUCTIVE) is False
+    assert stato.abort_reason == "Eseguire rm -rf?"
+
+
+def test_yolo_vince_anche_sul_distruttivo() -> None:
+    """--yolo resta il modo esplicito per dire si' a tutto, anche in cron."""
+    stato = _stato_non_presidiato(yolo=True)
+    assert make_confirm_fn(stato)("Eseguire rm -rf?", level=LEVEL_DESTRUCTIVE) is True
+    assert stato.abort_reason == ""
+
+
+def test_sessione_interattiva_non_decide_da_sola(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Con un terminale davanti la domanda si fa, non si risolve in automatico."""
+    stato = _stato_non_presidiato(unattended=False)
+    monkeypatch.setattr("ernesto.cli.sys.stdin.isatty", lambda: True)
+    chiesto: list[str] = []
+    monkeypatch.setattr(
+        "ernesto.cli.questionary.confirm",
+        lambda message, default=False: SimpleNamespace(ask=lambda: chiesto.append(message) or True),
+    )
+    assert make_confirm_fn(stato)("Inviare questa email?", level=LEVEL_EXTERNAL) is True
+    assert chiesto == ["Inviare questa email?"]

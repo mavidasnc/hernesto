@@ -252,6 +252,8 @@ class SessionState:
     dry_run: bool = False
     reasoning_effort: str = "medium"
     max_steps: int = MAX_AGENT_STEPS  # guard rail del loop agentico, modificabile con /step
+    unattended: bool = False    # avviata con --prompt/--file: nessuno puo' rispondere alle conferme
+    abort_reason: str = ""      # motivo per cui il turno va interrotto (conferma distruttiva negata)
     cost_limit: float = DEFAULT_MAX_COST       # tetto di spesa in vigore (0 = nessun tetto)
     cost_limit_step: float = DEFAULT_MAX_COST  # di quanto si sposta quando l'utente conferma
     tools_enabled: bool = True  # False se il provider non supporta i tool (degradazione)

@@ -115,6 +115,11 @@ skill in `SessionState.loaded_skills`, riletti da disco a ogni composizione del 
   superato dell'ultimo turno. La conferma sta in `confirm_budget()` e non passa da
   `make_confirm_fn`, perché `--yolo` non deve aggirarla. Senza terminale la risposta è no,
   come per ogni altra conferma non presidiata.
+- **Senza nessuno al terminale le conferme si decidono da sole** (`_decidi_da_solo` in
+  `cli.py`): approvate le non distruttive, negato `LEVEL_DESTRUCTIVE`, che imposta
+  `state.abort_reason` e fa uscire `run_turn` dal loop. Il rifiuto non deve tornare al
+  modello come errore, altrimenti lo step successivo è il tentativo di ottenere lo stesso
+  risultato con `run_command`. `state.unattended` lo attiva il ramo `--prompt` di `main`.
 - **Le conferme dichiarano la gravità** (`LEVEL_DESTRUCTIVE`/`LEVEL_EXTERNAL`/
   `LEVEL_WARNING` in `tools/__init__.py`): le etichette sono ASCII e il colore si applica
   solo se `sys.stdout.isatty()`, come per il banner.

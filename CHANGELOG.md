@@ -5,6 +5,18 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.12.0] - 2026-09-18
+
+### Cambiato
+- **Le conferme non presidiate si risolvono da sole.** Con `--prompt` o `--file` nessuno puo' rispondere: le azioni ordinarie (email, spostamenti, percorsi fuori dalla cartella di lavoro) vengono approvate e annotate nel log, quelle distruttive (denylist dei comandi, eliminazione di posta) negate. Prima la conferma restava appesa su un terminale e veniva rifiutata in cron, dove pero' il compito falliva in silenzio.
+- **Un rifiuto distruttivo interrompe l'esecuzione** invece di tornare al modello come errore: `run_turn` esce dal loop e il processo termina con uscita **3**, distinta dal tetto di spesa (2) e dagli errori di avvio (1). Il motivo del rifiuto entra nel log come evento `conferma`.
+
+### Corretto
+- **Le conferme non si bloccano piu' fuori da una console Windows.** Il controllo su `sys.stdin.isatty()` non bastava: `questionary` apre il terminale per conto proprio e sotto git bash falliva con `Found xterm-256color, while expecting a Windows console`, trasformando la conferma in un errore dello strumento. In modalita' non presidiata `questionary` non viene piu' invocato.
+
+### Aggiunto
+- Regola in `context/identity.md`: non si rifa' con la shell cio' che uno strumento dedicato ha rifiutato o non ha potuto fare. Nelle prove l'agente, visto fallire `send_email`, ha provato per cinque minuti a mandare la stessa email con `curl`, con un file `.cmd` e con uno script Python, cioe' saltando anteprima, conferma e registro.
+
 ## [0.11.0] - 2026-09-18
 
 ### Aggiunto

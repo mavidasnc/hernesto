@@ -246,7 +246,7 @@ def make_reader() -> Callable[[str], str]:
 
 
 def make_confirm_fn(state: SessionState) -> ConfirmFn:
-    """Callback di conferma: questionary se TTY; se stdin non e' un TTY, default False."""
+    """Callback di conferma: chiede all'utente, o decide da se' quando nessuno puo' rispondere."""
 
     def confirm(message: str, preview: str | None = None, level: str = LEVEL_WARNING) -> bool:
         if state.yolo:
@@ -254,9 +254,8 @@ def make_confirm_fn(state: SessionState) -> ConfirmFn:
         print(f"\n{_badge(level)} {message}")
         if preview:
             print(f"---\n{preview}\n---")
-        if not sys.stdin.isatty():
-            print(f"[conferma richiesta] {message} → no (stdin non interattivo)")
-            return False
+        if state.unattended or not sys.stdin.isatty():
+            return _decidi_da_solo(state, message, level)
         try:
             answer = questionary.confirm(message, default=False).ask()
         except (KeyboardInterrupt, EOFError):
@@ -264,6 +263,26 @@ def make_confirm_fn(state: SessionState) -> ConfirmFn:
         return bool(answer)
 
     return confirm
+
+
+def _decidi_da_solo(state: SessionState, message: str, level: str) -> bool:
+    """Risposta automatica quando non c'e' nessuno al terminale.
+
+    Una conferma che nessuno puo' soddisfare non protegge: il modello, visto fallire lo
+    strumento con l'anteprima e il log, riprova la stessa cosa con `run_command`, che ha
+    difese piu' deboli. Quindi si approva il lavoro ordinario e si nega solo il
+    distruttivo, che pero' non diventa un errore da aggirare: interrompe l'esecuzione.
+    """
+    if level == LEVEL_DESTRUCTIVE:
+        state.abort_reason = message
+        if state.logger:
+            state.logger.log("conferma", esito="negata", livello=level, richiesta=message)
+        print(f"[conferma automatica] {message} → NO (azione distruttiva, sessione non presidiata)")
+        return False
+    if state.logger:
+        state.logger.log("conferma", esito="approvata", livello=level, richiesta=message)
+    print(f"[conferma automatica] {message} → si (sessione non presidiata)")
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -1006,6 +1025,13 @@ def main(
     # Modalita' non presidiata: un turno solo, niente banner ne' schermo pulito, cosi'
     # l'output del processo contiene la risposta e nient'altro.
     if prompt:
+        # Nessuno e' al terminale: le conferme si decidono da sole (vedi _decidi_da_solo).
+        state.unattended = True
+        if not state.yolo:
+            print(
+                "[Non presidiata] le conferme si risolvono da sole: approvate le azioni ordinarie, "
+                "negate quelle distruttive, che interrompono l'esecuzione."
+            )
         for warning in startup_warnings:
             print(warning)
         state.messages.append({"role": "user", "content": prompt})
@@ -1018,8 +1044,12 @@ def main(
             f"[{state.total_prompt_tokens} tok in / {state.total_completion_tokens} out "
             f"· {fmt_cost(state.total_cost)} · {fmt_duration(state.total_seconds)} · log {logger.path}]"
         )
-        # Nessuno puo' rispondere a una conferma qui: si esce con un codice dedicato, cosi'
-        # chi incatena le esecuzioni distingue il tetto raggiunto da un errore qualsiasi.
+        # Uscite con codice dedicato: chi incatena le esecuzioni distingue un tetto
+        # raggiunto o un'azione negata da un errore qualsiasi.
+        if state.abort_reason:
+            logger.log("conferma", esito="uscita", richiesta=state.abort_reason)
+            print(f"[Conferme] esecuzione interrotta: {state.abort_reason}")
+            raise typer.Exit(3)
         if state.budget_exceeded():
             logger.log("budget", esito="uscita", costo=state.total_cost, limite=state.cost_limit)
             print(f"[Spesa] {budget_report(state)}: esecuzione terminata.")

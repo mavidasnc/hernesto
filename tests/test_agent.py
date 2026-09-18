@@ -196,3 +196,30 @@ def test_guard_rail_segue_max_steps(state: SessionState, capsys) -> None:
     out = capsys.readouterr().out
     assert "limite di 2 step" in out
     assert "step 2/2" in out
+
+
+def test_conferma_distruttiva_negata_chiude_il_turno(state: SessionState, capsys) -> None:
+    """Il turno si ferma invece di riconsegnare l'errore al modello, che proverebbe altre strade."""
+    state.messages.append({"role": "user", "content": "ciao"})
+    call = {"id": "c1", "type": "function", "function": {"name": "echo", "arguments": '{"message": "x"}'}}
+    chunk = SimpleNamespace(
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        choices=[SimpleNamespace(delta=SimpleNamespace(
+            content=None,
+            tool_calls=[SimpleNamespace(
+                index=0, id=call["id"], function=SimpleNamespace(name="echo", arguments='{"message": "x"}')
+            )],
+        ))],
+    )
+    chiamate: list[int] = []
+
+    def create(**_k: object) -> list:
+        chiamate.append(1)
+        # La conferma viene negata durante il primo giro di strumenti
+        state.abort_reason = "Eseguire rm -rf?"
+        return [chunk]
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    run_turn(state, client, [EchoTool()])
+    assert len(chiamate) == 1, "il loop non deve chiedere un altro giro al modello"
+    assert "azione distruttiva non autorizzata" in capsys.readouterr().out

@@ -225,6 +225,13 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
                 if state.logger:
                     state.logger.log("tool", tool_call_id=tool_call["id"], name=name, content=result)
 
+            # Una conferma distruttiva negata senza nessuno al terminale chiude il turno
+            # invece di tornare al modello come errore: altrimenti il passo successivo e'
+            # il tentativo di ottenere lo stesso risultato per un'altra strada.
+            if state.abort_reason:
+                print(f"\n[Interrotto] azione distruttiva non autorizzata: {state.abort_reason}\n")
+                return
+
         print(f"\n[Guard rail] raggiunto il limite di {state.max_steps} step: interrompo il loop.\n")
     finally:
         if not tempo_registrato:

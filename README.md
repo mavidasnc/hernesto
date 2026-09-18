@@ -287,14 +287,33 @@ le chiavi sono opzionali e un file malformato viene ignorato senza bloccare l'av
 
 ## Uso non presidiato
 
-Con `--prompt "testo"` ernesto esegue un solo turno e termina, quindi può stare in cron o
-nell'Utilità di pianificazione. Tre avvertenze:
+Con `--prompt "testo"` (o `--file`) ernesto esegue un solo turno e termina, quindi può stare
+in cron o nell'Utilità di pianificazione. Lì nessuno può rispondere a una conferma, e le
+conferme **si risolvono da sole**:
 
-- senza terminale interattivo **ogni conferma viene rifiutata**, quindi un task che tocca
-  file o invia email si blocca: serve `--yolo`, e con `--yolo` la denylist non protegge più;
+| Livello | Esempi | Esito |
+|---|---|---|
+| esterno, attenzione | invio email, spostamento di posta, percorsi fuori dalla workdir | approvato, annotato nel log |
+| distruttivo | comandi della denylist, eliminazione di posta | negato, e l'esecuzione si interrompe con uscita **3** |
+
+La ragione per cui il lavoro ordinario passa è pratica: una conferma che nessuno può
+soddisfare non protegge niente. Vedendo fallire lo strumento con la sua anteprima e il suo
+registro, il modello tenta la stessa cosa con `run_command`, cioè per la strada che di
+difese ne ha meno. Meglio lasciar passare l'email e fermarsi davvero dove il danno sarebbe
+serio.
+
+Il rifiuto di un'azione distruttiva non torna al modello come un errore qualsiasi: chiude
+l'esecuzione, così non c'è un secondo giro in cui cercare un'altra via. Con `--yolo`
+esplicito si torna al sì su tutto, denylist compresa.
+
+Restano due avvertenze:
+
 - vanno bene i compiti che leggono e riferiscono (rassegne stampa, controlli, riepiloghi),
   molto meno quelli che modificano progetti reali senza nessuno che guardi;
 - prova sempre la riga di comando con `--dry-run` prima di metterla in pianificazione.
+
+Codici di uscita: `0` tutto bene, `1` errore di avvio (file mancante, parametro non valido),
+`2` tetto di spesa raggiunto, `3` azione distruttiva negata.
 
 ## Policy di sicurezza
 
