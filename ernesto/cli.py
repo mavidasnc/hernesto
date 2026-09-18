@@ -27,6 +27,7 @@ from .config import (
     COMPACT_SUMMARY_MODEL,
     COMPACT_THRESHOLD_TOKENS,
     CONTEXT_DIR,
+    DEFAULT_MAX_COST,
     MAX_AGENT_STEPS,
     MEMORY_DIR,
     OPENROUTER_BASE,
@@ -799,15 +800,42 @@ def _maybe_offer_credentials_template(workdir: Path, ctx: Context) -> None:
             print(f"[Avviso] impossibile creare credentials.md: {exc}")
 
 
+def budget_report(state: SessionState) -> str:
+    """Riga che descrive lo sforamento: spesa raggiunta e tetto superato."""
+    return f"limite di spesa raggiunto: {fmt_cost(state.total_cost)} su {fmt_cost(state.cost_limit)}"
+
+
+def confirm_budget(state: SessionState) -> bool:
+    """Chiede se proseguire oltre il tetto di spesa.
+
+    Volutamente fuori da `make_confirm_fn`: `--yolo` disattiva le conferme sulle azioni
+    pericolose, non il tetto di spesa, che protegge il portafoglio e non i file. Senza
+    terminale la risposta e' no, come per ogni altra conferma non presidiata.
+    """
+    domanda = f"Proseguire per altri {fmt_cost(state.cost_limit_step)}?"
+    print(f"\n{_badge(LEVEL_WARNING)} {budget_report(state).capitalize()}")
+    if not sys.stdin.isatty():
+        print(f"[conferma richiesta] {domanda} → no (stdin non interattivo)")
+        return False
+    try:
+        return bool(questionary.confirm(domanda, default=False).ask())
+    except (KeyboardInterrupt, EOFError):
+        return False
+
+
 def compose_prompt(prompt: str | None, prompt_file: Path | None) -> str | None:
     """Unisce messaggio e file in un solo turno: prima il file, che fa da contesto.
 
-    Con il solo `--prompt` restituisce il messaggio, con il solo `--prompt-file` il
-    contenuto del file; insieme, il file precede l'istruzione. Senza nessuno dei due
-    restituisce None, cioe' sessione interattiva.
+    Con il solo `--prompt` restituisce il messaggio, con il solo `--file` il contenuto
+    del file; insieme, il file precede l'istruzione. Senza nessuno dei due restituisce
+    None, cioe' sessione interattiva.
     """
     if prompt_file is None:
         return prompt
+    # Verifica esplicita invece di affidarsi a read_text: cosi' anche una cartella o un
+    # percorso non utilizzabile danno lo stesso errore chiaro del file che manca.
+    if not prompt_file.is_file():
+        raise FileNotFoundError(prompt_file)
     testo = prompt_file.read_text(encoding="utf-8")
     return f"{testo}\n\n{prompt}" if prompt else testo
 
@@ -835,8 +863,11 @@ def main(
     prompt: str | None = typer.Option(
         None, "--prompt", help="Esegue un solo turno con questo messaggio e termina (per cron e script)."
     ),
-    prompt_file: Path | None = typer.Option(
-        None, "--prompt-file", help="Legge il messaggio da un file; con --prompt il file viene prima."
+    file: Path | None = typer.Option(
+        None, "--file", help="Legge il messaggio da un file; con --prompt il file viene prima."
+    ),
+    max_cost: float = typer.Option(
+        DEFAULT_MAX_COST, "--max-cost", help="Tetto di spesa della sessione in dollari (0 per nessun tetto)."
     ),
 ) -> None:
     """ernesto — agente da terminale con strumenti, basato su OpenRouter."""
@@ -848,9 +879,12 @@ def main(
     # per primo. Si legge subito, perche' un file illeggibile deve fermare l'avvio prima di
     # caricare contesto e prezzi.
     try:
-        prompt = compose_prompt(prompt, prompt_file)
+        prompt = compose_prompt(prompt, file)
+    except FileNotFoundError as exc:
+        print(f"Errore: file non trovato: {file}")
+        raise typer.Exit(1) from exc
     except OSError as exc:
-        print(f"Errore: impossibile leggere --prompt-file {prompt_file}: {exc}")
+        print(f"Errore: impossibile leggere --file {file}: {exc}")
         raise typer.Exit(1) from exc
 
     # .env come fallback: popola os.environ solo per le chiavi non gia' presenti, quindi
@@ -889,6 +923,10 @@ def main(
 
     if max_steps < 1:
         print(f"Errore: --max-steps deve essere almeno 1 (ricevuto {max_steps}).")
+        raise typer.Exit(1)
+
+    if max_cost < 0:
+        print(f"Errore: --max-cost non puo' essere negativo (ricevuto {max_cost}).")
         raise typer.Exit(1)
 
     # Precedenza del modello iniziale: --model, poi model.default in config.yaml, poi il
@@ -944,6 +982,8 @@ def main(
         reasoning_effort=reasoning,
         json_mode=initial_json_mode,
         max_steps=max_steps,
+        cost_limit=max_cost,
+        cost_limit_step=max_cost,
     )
     state.reset_messages()
 
@@ -978,6 +1018,12 @@ def main(
             f"[{state.total_prompt_tokens} tok in / {state.total_completion_tokens} out "
             f"· {fmt_cost(state.total_cost)} · {fmt_duration(state.total_seconds)} · log {logger.path}]"
         )
+        # Nessuno puo' rispondere a una conferma qui: si esce con un codice dedicato, cosi'
+        # chi incatena le esecuzioni distingue il tetto raggiunto da un errore qualsiasi.
+        if state.budget_exceeded():
+            logger.log("budget", esito="uscita", costo=state.total_cost, limite=state.cost_limit)
+            print(f"[Spesa] {budget_report(state)}: esecuzione terminata.")
+            raise typer.Exit(2)
         return
 
     _clear_screen()
@@ -1033,6 +1079,19 @@ def main(
         except KeyboardInterrupt:
             # Rete di sicurezza: run_turn gestisce gia' Ctrl+C, ma non si sa mai
             print("\n[Interrotto] turno annullato dall'utente (Ctrl+C).")
+
+        # Il controllo e' a turno finito: il costo di una chiamata si conosce solo quando
+        # la risposta e' arrivata, quindi il tetto puo' essere superato di un turno.
+        if state.budget_exceeded():
+            state.logger.log("budget", esito="raggiunto", costo=state.total_cost, limite=state.cost_limit)
+            if confirm_budget(state):
+                state.extend_budget()
+                state.logger.log("budget", esito="proseguito", nuovo_limite=state.cost_limit)
+                print(f"[Spesa] si prosegue fino a {fmt_cost(state.cost_limit)}.\n")
+            else:
+                state.logger.log("budget", esito="sessione chiusa")
+                print(f"[Spesa] {budget_report(state)}: chiudo la sessione. Arrivederci!")
+                break
 
 
 def run() -> None:

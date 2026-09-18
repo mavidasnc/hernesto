@@ -6,11 +6,13 @@ import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from prompt_toolkit.document import Document
 
 from ernesto.cli import (
     COMMANDS,
     _CommandCompleter,
+    budget_report,
     cmd_step,
     compose_prompt,
     handle_command,
@@ -124,3 +126,20 @@ def test_step_senza_argomento_non_cambia_niente() -> None:
     stato = _stato_step(45)
     cmd_step(stato, "")
     assert stato.max_steps == 45
+
+
+def test_file_mancante_riconosciuto(tmp_path: Path) -> None:
+    """Un file che non esiste si vede prima di leggerlo, con l'errore giusto."""
+    with pytest.raises(FileNotFoundError):
+        compose_prompt(None, tmp_path / "non-esiste.md")
+
+
+def test_cartella_al_posto_del_file(tmp_path: Path) -> None:
+    """Una cartella non e' un messaggio: stesso errore del file mancante."""
+    with pytest.raises(FileNotFoundError):
+        compose_prompt(None, tmp_path)
+
+
+def test_budget_report_cita_spesa_e_tetto() -> None:
+    stato = SimpleNamespace(total_cost=2.13, cost_limit=2.0)
+    assert budget_report(stato) == "limite di spesa raggiunto: $2.1300 su $2.0000"

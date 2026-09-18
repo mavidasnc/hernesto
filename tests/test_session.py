@@ -179,3 +179,29 @@ def test_riassunto_llm_fallisce_e_si_ricade_sul_deterministico() -> None:
     assert summarize_with_llm(_client_finto(boom=True), "m", "contenuto", "read_file") is None
     assert summarize_with_llm(_client_finto(testo=""), "m", "contenuto", "read_file") is None
     assert summarize_with_llm(_client_finto(testo="ok"), "m", "contenuto", "read_file") == "ok"
+
+
+def test_budget_scatta_al_raggiungimento(state: SessionState) -> None:
+    """Il tetto e' raggiunto, non superato: uguale basta."""
+    state.cost_limit = 2.0
+    state.total_cost = 1.99
+    assert state.budget_exceeded() is False
+    state.total_cost = 2.0
+    assert state.budget_exceeded() is True
+
+
+def test_budget_zero_significa_nessun_tetto(state: SessionState) -> None:
+    """Con --max-cost 0 la sessione non viene mai fermata per la spesa."""
+    state.cost_limit = 0.0
+    state.total_cost = 1000.0
+    assert state.budget_exceeded() is False
+
+
+def test_conferma_concede_sempre_lo_stesso_margine(state: SessionState) -> None:
+    """Il nuovo tetto parte dalla spesa corrente: lo sforamento non erode il margine."""
+    state.cost_limit = 2.0
+    state.cost_limit_step = 2.0
+    state.total_cost = 2.4  # l'ultimo turno ha sforato di 0.4
+    state.extend_budget()
+    assert state.cost_limit == 4.4
+    assert state.budget_exceeded() is False

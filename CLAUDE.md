@@ -51,7 +51,8 @@ riavvolta a `rewind_index` (l'ultimo messaggio utente) invece di restare inconsi
 `SessionState` (`ernesto/session.py`) è lo stato condiviso: messaggi, flag
 (`json_mode`, `yolo`, `dry_run`, `tools_enabled`), cumulativi di token, costo e tempo
 (`record_time`, alimentato dal `finally` di `run_turn` perché anche i turni interrotti
-contino), logger.
+contino), tetto di spesa (`cost_limit`/`cost_limit_step`, `budget_exceeded()` e
+`extend_budget()`), logger.
 Viene **iniettato in ogni strumento** al momento della costruzione: è così che i tool
 conoscono la workdir della sandbox e i flag di sicurezza. Non esiste stato globale.
 
@@ -109,6 +110,11 @@ skill in `SessionState.loaded_skills`, riletti da disco a ogni composizione del 
   questa garanzia**: esegue una shell arbitraria e può scrivere ovunque. Lì la difesa è
   `find_escaping_path()` in `tools/shell.py`, che chiede conferma su percorsi assoluti e
   `..`: euristica sul testo del comando, non un confine.
+- **Il tetto di spesa si controlla a turno finito**, in `cli.py`, mai dentro il loop di
+  step: il costo di una chiamata è noto solo con la risposta, quindi il limite può essere
+  superato dell'ultimo turno. La conferma sta in `confirm_budget()` e non passa da
+  `make_confirm_fn`, perché `--yolo` non deve aggirarla. Senza terminale la risposta è no,
+  come per ogni altra conferma non presidiata.
 - **Le conferme dichiarano la gravità** (`LEVEL_DESTRUCTIVE`/`LEVEL_EXTERNAL`/
   `LEVEL_WARNING` in `tools/__init__.py`): le etichette sono ASCII e il colore si applica
   solo se `sys.stdout.isatty()`, come per il banner.

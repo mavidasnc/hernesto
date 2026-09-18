@@ -9,6 +9,9 @@ from typing import Any
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 MAX_AGENT_STEPS = 30
+# Tetto di spesa della sessione, in dollari. Non protegge dal singolo turno costoso:
+# si guarda a turno finito, quando il costo e' noto (l'usage arriva con la risposta).
+DEFAULT_MAX_COST = 2.0
 TOOL_OUTPUT_LIMIT = 8000
 STDERR_OUTPUT_LIMIT = 2000  # stderr ha un tetto piu' basso: e' rumore piu' spesso che segnale
 LOG_CONTENT_LIMIT = 4000

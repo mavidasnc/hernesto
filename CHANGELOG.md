@@ -5,6 +5,16 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.10.0] - 2026-09-18
+
+### Aggiunto
+- **Tetto di spesa della sessione**, predefinito a 2 dollari e regolabile con `--max-cost` (`0` lo toglie). Il controllo e' a turno finito, perche' il costo di una chiamata si conosce solo con la risposta: il tetto puo' essere superato dell'ultimo turno, mai di piu'. In sessione interattiva ernesto chiede se proseguire per un altro scatto dello stesso importo, e il nuovo tetto riparte dalla spesa corrente, cosi' ogni conferma concede lo stesso margine anche quando l'ultimo turno ha sforato; rispondendo di no la sessione si chiude. Con `--prompt` o `--file`, dove nessuno puo' rispondere, l'esecuzione termina con uscita **2**, distinguibile da un errore qualsiasi. Ogni esito entra nel log JSONL come evento `budget`, con spesa, tetto e decisione.
+- La conferma di spesa non passa da `--yolo`: quel flag disattiva le conferme sulle azioni pericolose, non il tetto, che difende il portafoglio e non i file.
+
+### Cambiato
+- **`--prompt-file` si chiama `--file`.** Nome piu' corto per un'opzione che si usa spesso a mano.
+- **Il file viene verificato prima di ogni altra cosa**: se il percorso non esiste, o non e' un file, l'avvio si ferma con `Errore: file non trovato: ...` e uscita 1, senza caricare contesto ne' prezzi. Prima l'errore arrivava dal sistema operativo, con testo diverso a seconda del caso (una cartella dava `PermissionError` su Windows).
+
 ## [0.9.0] - 2026-09-18
 
 ### Aggiunto

@@ -82,13 +82,34 @@ tutta la sessione, perché `response_format` e il tool calling non convivono: il
 descriverebbe la chiamata in un blob di testo invece di eseguirla. I modelli che non
 dichiarano il supporto lo ignorano, e l'avvio lo segnala.
 
-`--prompt-file` serve quando il turno è lungo o vive già in un file: il contenuto diventa il
+`--file` serve quando il turno è lungo o vive già in un file: il contenuto diventa il
 messaggio dell'utente. Usato insieme a `--prompt`, il file fa da contesto e il messaggio da
 istruzione, in quest'ordine:
 
 ```bash
-python ernesto.py --prompt-file rapporto.md --prompt "riassumi in cinque punti"
+python ernesto.py --file rapporto.md --prompt "riassumi in cinque punti"
 ```
+
+Se il percorso non esiste, o non è un file, ernesto si ferma prima di caricare qualunque
+cosa e lo dice: `Errore: file non trovato: ...`, con uscita 1.
+
+### Tetto di spesa
+
+Ogni sessione ha un tetto predefinito di **2 dollari**, che si cambia con `--max-cost` e si
+toglie del tutto con `--max-cost 0`. Il controllo avviene a turno finito, perché il costo di
+una chiamata si conosce solo quando la risposta è arrivata: il tetto può quindi essere
+superato dell'ultimo turno, mai di più.
+
+Al superamento il comportamento dipende da chi sta guardando. In sessione interattiva
+ernesto chiede se proseguire per un altro scatto dello stesso importo, e il nuovo tetto
+riparte dalla spesa corrente, così ogni conferma concede sempre lo stesso margine; se
+rispondi di no, la sessione si chiude. Con `--prompt` o `--file`, dove nessuno può
+rispondere, l'esecuzione termina subito con **uscita 2**, distinguibile da un errore
+qualunque per chi incatena più esecuzioni. In entrambi i casi l'evento finisce nel log
+JSONL della sessione, con spesa raggiunta, tetto e decisione presa.
+
+La conferma di spesa non è tra quelle che `--yolo` disattiva: quel flag toglie le conferme
+sulle azioni pericolose, non il tetto, che protegge il portafoglio e non i file.
 
 A ogni risposta, accanto a token e costo, compaiono il tempo del turno e quello speso finora
 nella sessione: `[4.1k tok in / 317 tok out · $0.0017 · 16,5s · 21,5s tot]`. Il turno è
@@ -107,8 +128,9 @@ Opzioni (`python ernesto.py --help` per l'elenco completo):
 | `--no-mcp` | Disabilita l'integrazione MCP |
 | `--json` | Risposte in formato JSON (`response_format`), disattivo per impostazione predefinita |
 | `--max-steps N` | Step massimi del loop agentico per turno (default 30) |
+| `--max-cost N` | Tetto di spesa della sessione in dollari (default 2.0; `0` toglie il limite) |
 | `--prompt "testo"` | Esegue un solo turno e termina, senza REPL (per cron e script) |
-| `--prompt-file PATH` | Legge il turno da un file; insieme a `--prompt` il file viene prima |
+| `--file PATH` | Legge il turno da un file; insieme a `--prompt` il file viene prima |
 
 ## Configurazione: i file di contesto
 

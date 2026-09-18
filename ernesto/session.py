@@ -14,6 +14,7 @@ from .config import (
     COMPACT_KEEP_RECENT,
     COMPACT_MIN_CHARS,
     COMPACT_SUMMARY_MAX_CHARS,
+    DEFAULT_MAX_COST,
     LOG_CONTENT_LIMIT,
     MAX_AGENT_STEPS,
 )
@@ -251,6 +252,8 @@ class SessionState:
     dry_run: bool = False
     reasoning_effort: str = "medium"
     max_steps: int = MAX_AGENT_STEPS  # guard rail del loop agentico, modificabile con /step
+    cost_limit: float = DEFAULT_MAX_COST       # tetto di spesa in vigore (0 = nessun tetto)
+    cost_limit_step: float = DEFAULT_MAX_COST  # di quanto si sposta quando l'utente conferma
     tools_enabled: bool = True  # False se il provider non supporta i tool (degradazione)
     last_prompt_tokens: int = 0
     last_completion_tokens: int = 0
@@ -300,6 +303,18 @@ class SessionState:
         self.total_completion_tokens += completion_tokens
         self.total_cost += cost
         return cost
+
+    def budget_exceeded(self) -> bool:
+        """True quando la spesa della sessione ha raggiunto il tetto. Con tetto 0 non c'e' limite."""
+        return self.cost_limit > 0 and self.total_cost >= self.cost_limit
+
+    def extend_budget(self) -> None:
+        """Sposta il tetto in avanti di un altro scatto, dopo che l'utente ha confermato.
+
+        Riparte dalla spesa corrente e non dal vecchio tetto, cosi' ogni conferma concede
+        sempre lo stesso margine, indipendentemente da quanto l'ultimo turno ha sforato.
+        """
+        self.cost_limit = self.total_cost + self.cost_limit_step
 
     def record_time(self, seconds: float) -> None:
         """Registra la durata di un turno e aggiorna il cumulativo di sessione."""
