@@ -8,7 +8,15 @@ from types import SimpleNamespace
 
 from prompt_toolkit.document import Document
 
-from ernesto.cli import COMMANDS, _CommandCompleter, compose_prompt, handle_command, resolve_json_mode
+from ernesto.cli import (
+    COMMANDS,
+    _CommandCompleter,
+    cmd_step,
+    compose_prompt,
+    handle_command,
+    resolve_json_mode,
+)
+from ernesto.config import MAX_AGENT_STEPS
 from ernesto.models import ModelConfig
 
 
@@ -89,3 +97,30 @@ def test_json_mode_ignorato_dai_modelli_che_non_lo_supportano() -> None:
     """Chiederlo a un modello senza response_format non lo attiva: lo ignorerebbe o darebbe errore."""
     modello = ModelConfig("Test", "test/model", json_supported=False, schema_supported=False)
     assert resolve_json_mode(flag=True, configured=True, model=modello) is False
+
+
+def _stato_step(max_steps: int = MAX_AGENT_STEPS) -> SimpleNamespace:
+    return SimpleNamespace(max_steps=max_steps)
+
+
+def test_step_cambia_il_limite() -> None:
+    """/step con un numero alza o abbassa il guard rail del turno."""
+    stato = _stato_step()
+    cmd_step(stato, "60")
+    assert stato.max_steps == 60
+
+
+def test_step_rifiuta_valori_non_validi() -> None:
+    """Testo non numerico o zero non toccano il limite in vigore."""
+    stato = _stato_step(30)
+    cmd_step(stato, "molti")
+    cmd_step(stato, "0")
+    cmd_step(stato, "-5")
+    assert stato.max_steps == 30
+
+
+def test_step_senza_argomento_non_cambia_niente() -> None:
+    """Senza argomento il comando mostra soltanto il valore corrente."""
+    stato = _stato_step(45)
+    cmd_step(stato, "")
+    assert stato.max_steps == 45

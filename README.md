@@ -106,6 +106,7 @@ Opzioni (`python ernesto.py --help` per l'elenco completo):
 | `--reasoning low\|medium\|high\|xhigh` | Livello di reasoning (default `medium`) |
 | `--no-mcp` | Disabilita l'integrazione MCP |
 | `--json` | Risposte in formato JSON (`response_format`), disattivo per impostazione predefinita |
+| `--max-steps N` | Step massimi del loop agentico per turno (default 30) |
 | `--prompt "testo"` | Esegue un solo turno e termina, senza REPL (per cron e script) |
 | `--prompt-file PATH` | Legge il turno da un file; insieme a `--prompt` il file viene prima |
 

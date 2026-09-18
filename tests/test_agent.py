@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import ClassVar
 
 from ernesto.agent import run_tool_call, run_turn
-from ernesto.config import COMPACT_THRESHOLD_TOKENS
+from ernesto.config import COMPACT_THRESHOLD_TOKENS, MAX_AGENT_STEPS
 from ernesto.models import ModelConfig
 from ernesto.session import COMPACT_PREFIX, SessionState
 from ernesto.tools import Tool
@@ -101,6 +101,7 @@ def _fake_state(json_mode: bool) -> SimpleNamespace:
         tools_enabled=True,
         logger=None,
         tool_calls_count=0,
+        max_steps=MAX_AGENT_STEPS,
         record_usage=lambda *a: None,
         record_time=lambda *a: None,
         last_seconds=0.0,
@@ -171,3 +172,27 @@ def test_riga_finale_mostra_i_tempi(state: SessionState, capsys) -> None:
     run_turn(state, _fake_client({}), [EchoTool()])
     riga = [r for r in capsys.readouterr().out.splitlines() if r.startswith("[")][-1]
     assert "tok in" in riga and "tot]" in riga
+
+
+def test_guard_rail_segue_max_steps(state: SessionState, capsys) -> None:
+    """Il limite del turno e' quello della sessione, non piu' la costante di config."""
+    state.max_steps = 2
+    state.messages.append({"role": "user", "content": "ciao"})
+    # Un modello che chiama sempre lo strumento: il turno finisce solo per guard rail.
+    call = {"id": "c1", "type": "function", "function": {"name": "echo", "arguments": '{"message": "x"}'}}
+    chunk = SimpleNamespace(
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        choices=[SimpleNamespace(delta=SimpleNamespace(
+            content=None,
+            tool_calls=[SimpleNamespace(
+                index=0,
+                id=call["id"],
+                function=SimpleNamespace(name="echo", arguments='{"message": "x"}'),
+            )],
+        ))],
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **_k: [chunk])))
+    run_turn(state, client, [EchoTool()])
+    out = capsys.readouterr().out
+    assert "limite di 2 step" in out
+    assert "step 2/2" in out

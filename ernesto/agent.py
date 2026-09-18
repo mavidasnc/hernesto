@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from openai import APIConnectionError, APIError, APIStatusError
 
-from .config import COMPACT_THRESHOLD_TOKENS, MAX_AGENT_STEPS
+from .config import COMPACT_THRESHOLD_TOKENS
 from .session import compact_tool_results, fmt_duration, fmt_tokens
 from .tools import tool_schemas
 
@@ -110,7 +110,7 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
     tempo_registrato = False
 
     try:
-        for step in range(1, MAX_AGENT_STEPS + 1):
+        for step in range(1, state.max_steps + 1):
             # Compattazione prima della chiamata: il risparmio vale gia' sullo step che la
             # innesca. Non cambia la lunghezza della lista, quindi rewind_index resta valido.
             if state.history_token_estimate() > COMPACT_THRESHOLD_TOKENS:
@@ -211,7 +211,7 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
                 state.tool_calls_count += 1
                 name = tool_call["function"]["name"]
                 print(
-                    f"  step {step}/{MAX_AGENT_STEPS} · +{fmt_tokens(prompt_tok)} in · "
+                    f"  step {step}/{state.max_steps} · +{fmt_tokens(prompt_tok)} in · "
                     f"+{fmt_tokens(completion_tok)} out · {name} → {_summarize(result)}"
                 )
                 state.messages.append(
@@ -225,7 +225,7 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
                 if state.logger:
                     state.logger.log("tool", tool_call_id=tool_call["id"], name=name, content=result)
 
-        print(f"\n[Guard rail] raggiunto il limite di {MAX_AGENT_STEPS} step: interrompo il loop.\n")
+        print(f"\n[Guard rail] raggiunto il limite di {state.max_steps} step: interrompo il loop.\n")
     finally:
         if not tempo_registrato:
             state.record_time(time.perf_counter() - inizio)

@@ -27,6 +27,7 @@ from .config import (
     COMPACT_SUMMARY_MODEL,
     COMPACT_THRESHOLD_TOKENS,
     CONTEXT_DIR,
+    MAX_AGENT_STEPS,
     MEMORY_DIR,
     OPENROUTER_BASE,
     SKILLS_DIR,
@@ -99,6 +100,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("/skill", "Attiva una skill per la sessione (`off` per disattivarla)"),
     ("/tools", "Strumenti registrati, nativi e MCP"),
     ("/reasoning", "Mostra o cambia il livello di reasoning (low|medium|high|xhigh)"),
+    ("/step", "Mostra o cambia il numero massimo di step per turno"),
     ("/compact", "Compatta i risultati strumento in storia (`llm` per il riassunto generato)"),
     ("/clear", "Azzera la conversazione, mantenendo log e conteggi"),
     ("/save", "Salva la sessione in saves/ (.txt da leggere, .json da ricaricare)"),
@@ -498,7 +500,7 @@ def cmd_context(state: SessionState, tools: list[Tool], arg: str = "") -> None:
         if mcp:
             print(f"             MCP: {', '.join(mcp)}")
     stato = f"YOLO {'si' if state.yolo else 'no'} · dry-run {'si' if state.dry_run else 'no'}"
-    print(f"  stato      {stato} · JSON mode {'si' if state.json_mode else 'no'}")
+    print(f"  stato      {stato} · JSON mode {'si' if state.json_mode else 'no'} · step max {state.max_steps}")
     print("\n  /context files per i percorsi completi")
 
 
@@ -707,6 +709,27 @@ def cmd_reasoning(state: SessionState, arg: str) -> None:
     print(f"Reasoning effort impostato a: {arg}")
 
 
+def cmd_step(state: SessionState, arg: str) -> None:
+    """Mostra o cambia il tetto di step del loop agentico per il turno.
+
+    Il limite esiste perche' un modello che sbaglia puo' chiamare strumenti all'infinito:
+    alzarlo serve ai compiti lunghi, abbassarlo a tenere corta la briglia.
+    """
+    if not arg:
+        print(f"Step massimi per turno: {state.max_steps} (predefinito: {MAX_AGENT_STEPS})")
+        return
+    try:
+        valore = int(arg)
+    except ValueError:
+        print(f"Numero non valido: {arg}. Usa un intero maggiore di zero, es. /step 60")
+        return
+    if valore < 1:
+        print("Il numero di step deve essere almeno 1.")
+        return
+    state.max_steps = valore
+    print(f"Step massimi per turno impostati a: {valore}")
+
+
 def handle_command(state: SessionState, user_input: str, tools: list[Tool], client: OpenAI) -> bool:
     """Esegue un comando slash. Restituisce True se il comando era riconosciuto."""
     command, _, arg = user_input.partition(" ")
@@ -738,6 +761,8 @@ def handle_command(state: SessionState, user_input: str, tools: list[Tool], clie
         cmd_compact(state, arg, client)
     elif command == "/reasoning":
         cmd_reasoning(state, arg)
+    elif command == "/step":
+        cmd_step(state, arg)
     elif command == "/save":
         cmd_save(state)
     elif command == "/load":
@@ -804,6 +829,9 @@ def main(
     reasoning: str = typer.Option("medium", "--reasoning", help="Livello di reasoning: low|medium|high|xhigh."),
     no_mcp: bool = typer.Option(False, "--no-mcp", help="Disabilita gli strumenti MCP."),
     json_mode: bool = typer.Option(False, "--json", help="Risposte in JSON (disattiva gli strumenti)."),
+    max_steps: int = typer.Option(
+        MAX_AGENT_STEPS, "--max-steps", help="Step massimi del loop agentico per turno."
+    ),
     prompt: str | None = typer.Option(
         None, "--prompt", help="Esegue un solo turno con questo messaggio e termina (per cron e script)."
     ),
@@ -859,6 +887,10 @@ def main(
         print(f"Errore: --reasoning non valido: {reasoning}. Usa: {', '.join(REASONING_LEVELS)}")
         raise typer.Exit(1)
 
+    if max_steps < 1:
+        print(f"Errore: --max-steps deve essere almeno 1 (ricevuto {max_steps}).")
+        raise typer.Exit(1)
+
     # Precedenza del modello iniziale: --model, poi model.default in config.yaml, poi il
     # default del registry.
     model_cfg = config_section(workdir, "model")
@@ -911,6 +943,7 @@ def main(
         dry_run=dry_run,
         reasoning_effort=reasoning,
         json_mode=initial_json_mode,
+        max_steps=max_steps,
     )
     state.reset_messages()
 

@@ -43,7 +43,8 @@ Flusso: `ernesto.py` → `ernesto/cli.py` (`main`, typer + REPL + comandi slash)
 
 `run_turn` è il loop agentico: chiama l'API in streaming, accumula le tool call parziali
 per `index` (`_consume_stream`), le esegue, riaccoda i messaggi `role: "tool"` e ricicla
-fino a una risposta senza tool call, con guard rail `MAX_AGENT_STEPS` (30). In caso di
+fino a una risposta senza tool call, con guard rail `state.max_steps` (predefinito
+`MAX_AGENT_STEPS`, 30; regolabile con `--max-steps` e `/step`). In caso di
 errore API, di `KeyboardInterrupt` o di provider che non supporta i tool, la storia viene
 riavvolta a `rewind_index` (l'ultimo messaggio utente) invece di restare inconsistente.
 

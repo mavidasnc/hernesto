@@ -5,6 +5,14 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.9.0] - 2026-09-18
+
+### Aggiunto
+- **Il tetto di step diventa regolabile**, da riga di comando con `--max-steps N` e a sessione aperta con `/step N` (senza argomento mostra il valore in vigore e quello predefinito). Il guard rail resta a 30 step se non si dice altro: serve a fermare un modello che chiama strumenti a vuoto, ma un compito lungo puo' averne bisogno di piu' e uno rischioso di meno. Il valore attivo compare anche in `/context`.
+
+### Cambiato
+- `MAX_AGENT_STEPS` non e' piu' letta direttamente dal loop: resta il valore predefinito, mentre il limite in vigore vive in `SessionState.max_steps`. Le righe di step e il messaggio del guard rail mostrano il limite della sessione.
+
 ## [0.8.0] - 2026-09-18
 
 ### Aggiunto

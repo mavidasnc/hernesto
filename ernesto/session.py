@@ -15,6 +15,7 @@ from .config import (
     COMPACT_MIN_CHARS,
     COMPACT_SUMMARY_MAX_CHARS,
     LOG_CONTENT_LIMIT,
+    MAX_AGENT_STEPS,
 )
 from .context import Context, compose_system_prompt, reload_memory
 from .models import ModelConfig
@@ -249,6 +250,7 @@ class SessionState:
     yolo: bool = False
     dry_run: bool = False
     reasoning_effort: str = "medium"
+    max_steps: int = MAX_AGENT_STEPS  # guard rail del loop agentico, modificabile con /step
     tools_enabled: bool = True  # False se il provider non supporta i tool (degradazione)
     last_prompt_tokens: int = 0
     last_completion_tokens: int = 0
