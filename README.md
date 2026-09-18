@@ -208,6 +208,7 @@ leggibili e scrivibili dagli strumenti `read_file`/`write_file`.
 |---|---|
 | `list_files` | Elenca file e cartelle (opzionalmente ricorsivo) |
 | `read_file` | Legge un file di testo (con offset/limit) |
+| `search_files` | Cerca testo o regex nei file della workdir (`percorso:riga: testo`) |
 | `write_file` | Crea o sovrascrive un file (crea le directory intermedie) |
 | `edit_file` | Sostituzione esatta chirurgica (`old_string` → `new_string`) |
 | `run_command` | Esegue un comando di shell nella cartella di lavoro |

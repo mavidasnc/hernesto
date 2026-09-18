@@ -52,7 +52,7 @@ def tool_schemas(tools: list[Tool]) -> list[dict[str, Any]]:
 
 def build_native_tools(state: SessionState, confirm_fn: ConfirmFn) -> list[Tool]:
     """Costruisce la lista degli strumenti nativi attivi per la sessione."""
-    from .filesystem import EditFileTool, ListFilesTool, ReadFileTool, WriteFileTool
+    from .filesystem import EditFileTool, ListFilesTool, ReadFileTool, SearchFilesTool, WriteFileTool
     from .imap import ImapDeleteTool, ImapFoldersTool, ImapListTool, ImapMoveTool, ImapReadTool
     from .mail import SendEmailTool
     from .newsletter import NewsletterQueryTool
@@ -63,6 +63,7 @@ def build_native_tools(state: SessionState, confirm_fn: ConfirmFn) -> list[Tool]
     return [
         ListFilesTool(state),
         ReadFileTool(state),
+        SearchFilesTool(state),
         WriteFileTool(state),
         EditFileTool(state),
         RunCommandTool(state, confirm_fn),

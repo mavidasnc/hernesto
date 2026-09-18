@@ -5,6 +5,12 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.17.0] - 2026-09-18
+
+### Aggiunto
+- **`search_files`**: ricerca testuale o regex nei file della cartella di lavoro, con output `percorso:riga: testo`, saltando binari e cartelle generate. Prima il modello doveva cercare con `run_command` e grep, fuori dalle garanzie della sandbox. Idea presa da context-mode (cerca invece di riversare i file nel contesto), in forma proporzionata ai pochi MB di markdown di ernesto: niente indici FTS5, solo una grep in sandbox.
+- **Regole di risposta in `context/soul.md`** dalla valutazione di i-have-adhd: apri con la risposta o l'azione, lavori in piu' passi come lista numerata, errori riferiti come fatti con la mossa successiva, chiusura col prossimo passo concreto (non un riepilogo), elenchi lunghi raggruppati per tema. Scartate di proposito: restate dello stato a ogni turno (spreca token), stime in minuti (falsa precisione), cap a 5 voci (le rassegne ne hanno 10).
+
 ## [0.16.0] - 2026-09-18
 
 ### Aggiunto

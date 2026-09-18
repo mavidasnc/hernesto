@@ -12,6 +12,7 @@ from ernesto.tools.filesystem import (
     EditFileTool,
     ListFilesTool,
     ReadFileTool,
+    SearchFilesTool,
     WriteFileTool,
     resolve_in_sandbox,
 )
@@ -119,3 +120,82 @@ def test_errore_sandbox_nomina_workdir(state: SessionState) -> None:
     result = WriteFileTool(state).run(path="../fuori.txt", content="x")
     assert str(state.workdir) in result
     assert "relativi" in result
+
+
+# ---------------------------------------------------------------------------
+# search_files
+# ---------------------------------------------------------------------------
+
+
+def _popola(state: SessionState) -> None:
+    (state.workdir / "a.md").write_text("Prima riga\nQui c'e' la Parola chiave\nultima\n", encoding="utf-8")
+    sub = state.workdir / "memories"
+    sub.mkdir()
+    (sub / "b.md").write_text("parola minuscola altrove\n", encoding="utf-8")
+    (state.workdir / "bin.dat").write_bytes(b"\x00\x01parola\x00")
+
+
+def test_search_substring_case_insensitive(state: SessionState) -> None:
+    """Di default il match e' testuale e ignora maiuscole/minuscole."""
+    _popola(state)
+    result = SearchFilesTool(state).run(pattern="parola")
+    assert "a.md:2:" in result
+    assert "memories" in result and "b.md:1:" in result
+
+
+def test_search_case_sensitive(state: SessionState) -> None:
+    """Con ignore_case=False conta la differenza di maiuscole."""
+    _popola(state)
+    result = SearchFilesTool(state).run(pattern="Parola", ignore_case=False)
+    assert "a.md:2:" in result
+    assert "b.md" not in result
+
+
+def test_search_regex(state: SessionState) -> None:
+    """Con regex=True il pattern e' una espressione regolare."""
+    _popola(state)
+    result = SearchFilesTool(state).run(pattern=r"parol\w+ chiave", regex=True)
+    assert "a.md:2:" in result
+
+
+def test_search_regex_invalida(state: SessionState) -> None:
+    """Una regex rotta produce un errore leggibile, nessun crash."""
+    result = SearchFilesTool(state).run(pattern="([", regex=True)
+    assert result.startswith("ERRORE: regex non valida")
+
+
+def test_search_salta_binari_e_noise_dirs(state: SessionState) -> None:
+    """I file binari e le cartelle generate non vengono cercati."""
+    _popola(state)
+    venv = state.workdir / ".venv"
+    venv.mkdir()
+    (venv / "lib.py").write_text("parola nel venv\n", encoding="utf-8")
+    result = SearchFilesTool(state).run(pattern="parola")
+    assert "bin.dat" not in result
+    assert ".venv" not in result
+
+
+def test_search_nessuna_occornenza(state: SessionState) -> None:
+    _popola(state)
+    assert "Nessuna occorrenza" in SearchFilesTool(state).run(pattern="assente")
+
+
+def test_search_fuori_sandbox(state: SessionState) -> None:
+    result = SearchFilesTool(state).run(pattern="x", path="../")
+    assert result.startswith("ERRORE: path fuori dalla sandbox")
+
+
+def test_search_troncamento(state: SessionState) -> None:
+    """Oltre max_results il risultato si ferma con la nota di troncamento."""
+    (state.workdir / "tanti.txt").write_text("parola\n" * 100, encoding="utf-8")
+    result = SearchFilesTool(state).run(pattern="parola", max_results=10)
+    assert result.count("tanti.txt") == 10
+    assert "troncati" in result
+
+
+def test_search_file_singolo(state: SessionState) -> None:
+    """Il path puo' puntare a un file invece che a una cartella."""
+    _popola(state)
+    result = SearchFilesTool(state).run(pattern="parola", path="a.md")
+    assert "a.md:2:" in result
+    assert "b.md" not in result

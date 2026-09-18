@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -11,6 +12,12 @@ from . import Tool
 
 if TYPE_CHECKING:
     from ..session import SessionState
+
+# Tetti della ricerca: i risultati entrano nella storia a ogni step, quindi si
+# fermano presto: il modello restringe la query invece di scorrere elenchi infiniti.
+SEARCH_MAX_RESULTS = 50
+SEARCH_OUTPUT_CHARS = 6000
+SEARCH_LINE_CHARS = 200
 
 def sandbox_error(workdir: Path) -> str:
     """Errore di sandbox che dice al modello come rimediare.
@@ -133,6 +140,91 @@ class ReadFileTool(Tool):
         if int(offset) + len(selected) < len(lines):
             note = f"\n…[mostrate righe {offset}-{int(offset) + len(selected)} di {len(lines)}]"
         return "\n".join(selected) + note
+
+
+class SearchFilesTool(Tool):
+    """Cerca un testo o una regex nei file della cartella di lavoro."""
+
+    name = "search_files"
+    description = (
+        "Cerca un testo (o una regex) nei file di testo della cartella di lavoro, ricorsivamente. "
+        "Restituisce righe nel formato percorso:riga: testo. Salta file binari e cartelle generate."
+    )
+    parameters: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {
+            "pattern": {"type": "string", "description": "Testo o regex da cercare"},
+            "path": {"type": "string", "description": "File o cartella di partenza (default: .)"},
+            "regex": {"type": "boolean", "description": "Interpreta pattern come regex", "default": False},
+            "ignore_case": {"type": "boolean", "description": "Maiuscole/minuscole indistinte", "default": True},
+            "max_results": {
+                "type": "integer",
+                "description": f"Numero massimo di righe trovate (default {SEARCH_MAX_RESULTS})",
+            },
+        },
+        "required": ["pattern"],
+    }
+
+    def __init__(self, state: SessionState) -> None:
+        self._state = state
+
+    def run(
+        self,
+        pattern: str,
+        path: str = ".",
+        regex: bool = False,
+        ignore_case: bool = True,
+        max_results: int = SEARCH_MAX_RESULTS,
+        **_: Any,
+    ) -> str:
+        target = resolve_in_sandbox(self._state.workdir, path)
+        if target is None:
+            return sandbox_error(self._state.workdir)
+        if not target.exists():
+            return f"ERRORE: percorso inesistente: {path}"
+        flags = re.IGNORECASE if ignore_case else 0
+        if not regex:
+            pattern = re.escape(pattern)
+        try:
+            compiled = re.compile(pattern, flags)
+        except re.error as exc:
+            return f"ERRORE: regex non valida: {exc}"
+        max_results = max(1, int(max_results))
+
+        files = [f for f in (_walk_filtered(target) if target.is_dir() else [target]) if f.is_file()]
+        lines: list[str] = []
+        total = 0
+        truncated = False
+        for file in files:
+            try:
+                raw = file.read_bytes()
+            except OSError:
+                continue
+            if b"\x00" in raw[:8192]:  # binario: come read_file, non si legge
+                continue
+            for lineno, line in enumerate(raw.decode("utf-8", errors="replace").splitlines(), start=1):
+                if not compiled.search(line):
+                    continue
+                rel = file.relative_to(self._state.workdir)
+                testo = line.strip()
+                if len(testo) > SEARCH_LINE_CHARS:
+                    testo = testo[:SEARCH_LINE_CHARS].rstrip() + "…"
+                lines.append(f"{rel}:{lineno}: {testo}")
+                total += 1
+                if total >= max_results:
+                    truncated = True
+                    break
+            if truncated:
+                break
+        if not lines:
+            return "Nessuna occorrenza trovata."
+        out = "\n".join(lines)
+        if len(out) > SEARCH_OUTPUT_CHARS:
+            out = out[:SEARCH_OUTPUT_CHARS]
+            truncated = True
+        if truncated:
+            out += "\n…[risultati troncati: restringi la ricerca con path o un pattern piu' preciso]"
+        return out
 
 
 class WriteFileTool(Tool):
