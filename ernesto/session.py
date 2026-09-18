@@ -175,6 +175,7 @@ def session_snapshot(state: SessionState) -> dict[str, Any]:
         "reasoning": state.reasoning_effort,
         "token": {"in": state.total_prompt_tokens, "out": state.total_completion_tokens},
         "costo": state.total_cost,
+        "secondi": state.total_seconds,
         "log": str(state.logger.path) if state.logger else None,
         "messaggi": state.messages,
     }
@@ -222,6 +223,14 @@ def fmt_cost(cost: float) -> str:
     return f"${cost:.4f}"
 
 
+def fmt_duration(seconds: float) -> str:
+    """Formatta una durata (es. 8,3s oppure 2m 05s): i decimi servono solo sotto il minuto."""
+    if seconds < 60:
+        return f"{seconds:.1f}s".replace(".", ",")
+    minuti, resto = divmod(int(seconds), 60)
+    return f"{minuti}m {resto:02d}s"
+
+
 def estimate_tokens(text: str) -> int:
     """Stima euristica dei token: ~4 caratteri per token."""
     return max(1, len(text) // 4)
@@ -246,6 +255,8 @@ class SessionState:
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     total_cost: float = 0.0
+    last_seconds: float = 0.0    # durata dell'ultimo turno
+    total_seconds: float = 0.0   # tempo speso nei turni dall'inizio della sessione
     tool_calls_count: int = 0
     compacted_count: int = 0    # risultati strumento riassunti nella sessione
     compacted_tokens: int = 0   # token stimati risparmiati (cumulativo)
@@ -287,6 +298,11 @@ class SessionState:
         self.total_completion_tokens += completion_tokens
         self.total_cost += cost
         return cost
+
+    def record_time(self, seconds: float) -> None:
+        """Registra la durata di un turno e aggiorna il cumulativo di sessione."""
+        self.last_seconds = seconds
+        self.total_seconds += seconds
 
     def history_token_estimate(self) -> int:
         """Stima dei token occupati dai messaggi in storia."""

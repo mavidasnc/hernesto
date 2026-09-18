@@ -77,6 +77,24 @@ sorgenti. L'unico file che resta fuori è `.env`: le chiavi API vanno messe sul 
 destinazione, non spedite dentro l'archivio. `context/credentials.md` invece viaggia con il
 bundle, perché dichiara quali variabili servono e dove ottenerle senza contenerne i valori.
 
+Con `--json` le risposte arrivano come oggetto JSON e gli strumenti restano disattivati per
+tutta la sessione, perché `response_format` e il tool calling non convivono: il modello
+descriverebbe la chiamata in un blob di testo invece di eseguirla. I modelli che non
+dichiarano il supporto lo ignorano, e l'avvio lo segnala.
+
+`--prompt-file` serve quando il turno è lungo o vive già in un file: il contenuto diventa il
+messaggio dell'utente. Usato insieme a `--prompt`, il file fa da contesto e il messaggio da
+istruzione, in quest'ordine:
+
+```bash
+python ernesto.py --prompt-file rapporto.md --prompt "riassumi in cinque punti"
+```
+
+A ogni risposta, accanto a token e costo, compaiono il tempo del turno e quello speso finora
+nella sessione: `[4.1k tok in / 317 tok out · $0.0017 · 16,5s · 21,5s tot]`. Il turno è
+cronometrato per intero, attese degli strumenti e conferme comprese, perché è il tempo che
+aspetti davvero; il cumulativo si ritrova anche in `/log`.
+
 Opzioni (`python ernesto.py --help` per l'elenco completo):
 
 | Opzione | Effetto |
@@ -87,7 +105,9 @@ Opzioni (`python ernesto.py --help` per l'elenco completo):
 | `--dry-run` | Simula write/edit/email/comandi senza toccare nulla |
 | `--reasoning low\|medium\|high\|xhigh` | Livello di reasoning (default `medium`) |
 | `--no-mcp` | Disabilita l'integrazione MCP |
+| `--json` | Risposte in formato JSON (`response_format`), disattivo per impostazione predefinita |
 | `--prompt "testo"` | Esegue un solo turno e termina, senza REPL (per cron e script) |
+| `--prompt-file PATH` | Legge il turno da un file; insieme a `--prompt` il file viene prima |
 
 ## Configurazione: i file di contesto
 

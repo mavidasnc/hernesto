@@ -102,6 +102,9 @@ def _fake_state(json_mode: bool) -> SimpleNamespace:
         logger=None,
         tool_calls_count=0,
         record_usage=lambda *a: None,
+        record_time=lambda *a: None,
+        last_seconds=0.0,
+        total_seconds=0.0,
         history_token_estimate=lambda: 0,
     )
 
@@ -141,3 +144,30 @@ def test_auto_compact_triggers_above_threshold(state: SessionState) -> None:
     assert state.compacted_count > 0
     assert state.compacted_tokens > 0
     assert any(COMPACT_PREFIX in str(m.get("content") or "") for m in captured["messages"])
+
+
+def test_tempo_del_turno_registrato(state: SessionState) -> None:
+    """Il turno misura quanto e' durato e lo somma al cumulativo di sessione."""
+    state.messages.append({"role": "user", "content": "ciao"})
+    run_turn(state, _fake_client({}), [EchoTool()])
+    assert state.last_seconds > 0
+    assert state.total_seconds == state.last_seconds
+
+
+def test_tempo_registrato_anche_se_il_turno_si_interrompe(state: SessionState) -> None:
+    """Ctrl+C durante lo streaming: il tempo speso resta nel cumulativo."""
+    def create(**_kwargs: object) -> list:
+        raise KeyboardInterrupt
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    state.messages.append({"role": "user", "content": "ciao"})
+    run_turn(state, client, [EchoTool()])
+    assert state.total_seconds > 0
+
+
+def test_riga_finale_mostra_i_tempi(state: SessionState, capsys) -> None:
+    """Accanto a token e costo compaiono durata del turno e totale di sessione."""
+    state.messages.append({"role": "user", "content": "ciao"})
+    run_turn(state, _fake_client({}), [EchoTool()])
+    riga = [r for r in capsys.readouterr().out.splitlines() if r.startswith("[")][-1]
+    assert "tok in" in riga and "tot]" in riga

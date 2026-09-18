@@ -5,6 +5,13 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.8.0] - 2026-09-18
+
+### Aggiunto
+- **`--json`**: attiva il formato JSON delle risposte dalla riga di comando, disattivo per impostazione predefinita. Ha la precedenza su `model.json_mode` di `config.yaml`, e un modello che non dichiara `response_format` non lo riceve, con un avviso all'avvio. Come gia' avveniva con `/model`, il JSON mode tiene disattivati gli strumenti: `response_format` e tool calling insieme fanno descrivere la chiamata invece di eseguirla.
+- **`--prompt-file PATH`**: prende da un file il messaggio del turno non presidiato, per i prompt lunghi o gia' scritti altrove. Insieme a `--prompt` i due si uniscono in un solo messaggio, prima il file (contesto) e poi l'istruzione. Un file illeggibile ferma l'avvio prima di caricare contesto e prezzi, con errore ed exit code 1.
+- **Tempi accanto a token e costo**: ogni risposta riporta la durata del turno e il tempo speso dall'inizio della sessione, per esempio `[4.1k tok in / 317 tok out · $0.0017 · 16,5s · 21,5s tot]`; il cumulativo compare anche in `/log` e nell'istantanea di `/save`. Il turno e' misurato per intero, strumenti e attese di conferma compresi, ed e' registrato anche quando finisce in errore o interrotto con Ctrl+C, cosi' il totale non perde pezzi.
+
 ## [0.7.1] - 2026-09-17
 
 ### Cambiato

@@ -45,13 +45,14 @@ from .context import (
     verify_env_vars,
 )
 from .mcp_client import load_mcp_tools
-from .models import DEFAULT_MODEL, MODELS, find_model, load_pricing
+from .models import DEFAULT_MODEL, MODELS, ModelConfig, find_model, load_pricing
 from .session import (
     SessionLogger,
     SessionState,
     compact_tool_results,
     estimate_tokens,
     fmt_cost,
+    fmt_duration,
     fmt_tokens,
     prompt_indicator,
     session_snapshot,
@@ -635,7 +636,7 @@ def cmd_log(state: SessionState) -> None:
         )
     print(
         f"Token totali: {state.total_prompt_tokens} in / {state.total_completion_tokens} out "
-        f"· costo cumulativo {fmt_cost(state.total_cost)}"
+        f"· costo cumulativo {fmt_cost(state.total_cost)} · tempo {fmt_duration(state.total_seconds)}"
     )
 
 
@@ -773,6 +774,28 @@ def _maybe_offer_credentials_template(workdir: Path, ctx: Context) -> None:
             print(f"[Avviso] impossibile creare credentials.md: {exc}")
 
 
+def compose_prompt(prompt: str | None, prompt_file: Path | None) -> str | None:
+    """Unisce messaggio e file in un solo turno: prima il file, che fa da contesto.
+
+    Con il solo `--prompt` restituisce il messaggio, con il solo `--prompt-file` il
+    contenuto del file; insieme, il file precede l'istruzione. Senza nessuno dei due
+    restituisce None, cioe' sessione interattiva.
+    """
+    if prompt_file is None:
+        return prompt
+    testo = prompt_file.read_text(encoding="utf-8")
+    return f"{testo}\n\n{prompt}" if prompt else testo
+
+
+def resolve_json_mode(flag: bool, configured: bool, model: ModelConfig) -> bool:
+    """JSON mode iniziale: `--json` vince su `model.json_mode`, il modello ha l'ultima parola.
+
+    Un modello che non dichiara `response_format` non lo riceve: lo ignorerebbe in
+    silenzio o risponderebbe errore, a seconda del provider.
+    """
+    return (flag or configured) and model.json_supported
+
+
 def main(
     workdir: Path | None = typer.Option(None, "--workdir", help="Cartella di lavoro (sandbox dei tool filesystem)."),
     model: str | None = typer.Option(None, "--model", help="ID OpenRouter del modello iniziale."),
@@ -780,14 +803,27 @@ def main(
     dry_run: bool = typer.Option(False, "--dry-run", help="Simula le azioni (write/edit/send/run) senza eseguirle."),
     reasoning: str = typer.Option("medium", "--reasoning", help="Livello di reasoning: low|medium|high|xhigh."),
     no_mcp: bool = typer.Option(False, "--no-mcp", help="Disabilita gli strumenti MCP."),
+    json_mode: bool = typer.Option(False, "--json", help="Risposte in JSON (disattiva gli strumenti)."),
     prompt: str | None = typer.Option(
         None, "--prompt", help="Esegue un solo turno con questo messaggio e termina (per cron e script)."
+    ),
+    prompt_file: Path | None = typer.Option(
+        None, "--prompt-file", help="Legge il messaggio da un file; con --prompt il file viene prima."
     ),
 ) -> None:
     """ernesto — agente da terminale con strumenti, basato su OpenRouter."""
     _configure_console()
     workdir = (workdir or Path.cwd()).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
+
+    # Il file fa da contesto e --prompt da istruzione: uniti in un solo messaggio, il file
+    # per primo. Si legge subito, perche' un file illeggibile deve fermare l'avvio prima di
+    # caricare contesto e prezzi.
+    try:
+        prompt = compose_prompt(prompt, prompt_file)
+    except OSError as exc:
+        print(f"Errore: impossibile leggere --prompt-file {prompt_file}: {exc}")
+        raise typer.Exit(1) from exc
 
     # .env come fallback: popola os.environ solo per le chiavi non gia' presenti, quindi
     # quello del progetto vince su quello globale. Senza il secondo, lanciare ernesto su un
@@ -840,7 +876,13 @@ def main(
             print(f"[Avviso] modello '{model}' non nel registry: uso {initial_model.label}.")
         else:
             initial_model = found
-    initial_json_mode = bool(model_cfg.get("json_mode", False)) and initial_model.json_supported
+    # Precedenza: --json, poi model.json_mode in config.yaml. Un modello che non dichiara
+    # response_format non lo riceve comunque: lo ignorerebbe o darebbe errore.
+    initial_json_mode = resolve_json_mode(json_mode, bool(model_cfg.get("json_mode", False)), initial_model)
+    if json_mode and not initial_model.json_supported:
+        startup_warnings.append(f"[Avviso] {initial_model.label} non supporta il JSON mode: ignorato.")
+    elif initial_json_mode:
+        startup_warnings.append("[Avviso] JSON mode attivo: gli strumenti restano disattivati per la sessione.")
 
     api_key = os.environ["OPENROUTER_API_KEY"]
     client = OpenAI(
@@ -901,7 +943,7 @@ def main(
             print("\n[Interrotto] turno annullato dall'utente (Ctrl+C).")
         print(
             f"[{state.total_prompt_tokens} tok in / {state.total_completion_tokens} out "
-            f"· {fmt_cost(state.total_cost)} · log {logger.path}]"
+            f"· {fmt_cost(state.total_cost)} · {fmt_duration(state.total_seconds)} · log {logger.path}]"
         )
         return
 

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import TYPE_CHECKING, Any
 
 from openai import APIConnectionError, APIError, APIStatusError
 
 from .config import COMPACT_THRESHOLD_TOKENS, MAX_AGENT_STEPS
-from .session import compact_tool_results, fmt_tokens
+from .session import compact_tool_results, fmt_duration, fmt_tokens
 from .tools import tool_schemas
 
 if TYPE_CHECKING:
@@ -100,108 +101,131 @@ def run_turn(state: SessionState, client: OpenAI, tools: list[Tool]) -> None:
     schemas = tool_schemas(tools)
     rewind_index = len(state.messages) - 1  # posizione dell'ultimo user message
 
-    for step in range(1, MAX_AGENT_STEPS + 1):
-        # Compattazione prima della chiamata: il risparmio vale gia' sullo step che la
-        # innesca. Non cambia la lunghezza della lista, quindi rewind_index resta valido.
-        if state.history_token_estimate() > COMPACT_THRESHOLD_TOKENS:
-            compacted, saved = compact_tool_results(state.messages, summarizer=state.summarizer)
-            if compacted:
-                state.compacted_count += compacted
-                state.compacted_tokens += saved
-                print(f"\n[Compattazione] {compacted} risultati strumento riassunti · ~{fmt_tokens(saved)} tok in meno")
-                if state.logger:
-                    state.logger.log("compact", messages=compacted, saved_tokens=saved)
-        call_kwargs: dict[str, Any] = {
-            "model": state.model.id,
-            "messages": state.messages,
-            "stream": True,
-            # include_usage fa si' che l'ultimo chunk contenga i conteggi token
-            "stream_options": {"include_usage": True},
-            "extra_body": {"reasoning": {"effort": state.reasoning_effort}},
-        }
-        if state.json_mode:
-            call_kwargs["response_format"] = {"type": "json_object"}
-        # JSON mode (response_format json_object) e' incompatibile col tool calling:
-        # il modello emetterebbe un blob JSON testuale invece di tool calls native.
-        if state.tools_enabled and schemas and not state.json_mode:
-            call_kwargs["tools"] = schemas
+    # Il tempo del turno comprende le chiamate al modello, gli strumenti e le attese
+    # di conferma: e' il tempo che l'utente aspetta davvero. `perf_counter` e non
+    # `monotonic` perche' su Windows quest'ultimo si muove a scatti di ~15 ms, troppo
+    # grossolani per i turni brevi. Il `finally` registra anche le uscite anticipate,
+    # cosi' il cumulativo di sessione non perde i turni finiti in errore o interrotti.
+    inizio = time.perf_counter()
+    tempo_registrato = False
 
-        try:
-            stream = client.chat.completions.create(**call_kwargs)
-            content, tool_calls, prompt_tok, completion_tok = _consume_stream(stream)
-        except APIStatusError as exc:
-            if state.tools_enabled and "tools" in call_kwargs and _tools_unsupported_error(exc):
-                # Degradazione: il provider non supporta i tool, riprovo senza (avviso una volta)
-                state.tools_enabled = False
-                print("\n[Avviso] questo provider non supporta strumenti: continuo senza tools.")
-                continue
-            print(f"\n[Errore API {exc.status_code}] {exc.message}")
-            del state.messages[rewind_index:]
-            return
-        except APIConnectionError as exc:
-            print(f"\n[Errore di connessione] {exc}")
-            del state.messages[rewind_index:]
-            return
-        except APIError as exc:
-            # Catch-all per errori generici del provider (es. "Provider returned error")
-            print(f"\n[Errore provider] {exc}")
-            del state.messages[rewind_index:]
-            return
-        except KeyboardInterrupt:
-            # Ctrl+C durante lo streaming: annulla il turno, torna al prompt
-            print("\n[Interrotto] turno annullato dall'utente (Ctrl+C).")
-            del state.messages[rewind_index:]
-            return
+    try:
+        for step in range(1, MAX_AGENT_STEPS + 1):
+            # Compattazione prima della chiamata: il risparmio vale gia' sullo step che la
+            # innesca. Non cambia la lunghezza della lista, quindi rewind_index resta valido.
+            if state.history_token_estimate() > COMPACT_THRESHOLD_TOKENS:
+                compacted, saved = compact_tool_results(state.messages, summarizer=state.summarizer)
+                if compacted:
+                    state.compacted_count += compacted
+                    state.compacted_tokens += saved
+                    print(
+                        f"\n[Compattazione] {compacted} risultati strumento riassunti "
+                        f"· ~{fmt_tokens(saved)} tok in meno"
+                    )
+                    if state.logger:
+                        state.logger.log("compact", messages=compacted, saved_tokens=saved)
+            call_kwargs: dict[str, Any] = {
+                "model": state.model.id,
+                "messages": state.messages,
+                "stream": True,
+                # include_usage fa si' che l'ultimo chunk contenga i conteggi token
+                "stream_options": {"include_usage": True},
+                "extra_body": {"reasoning": {"effort": state.reasoning_effort}},
+            }
+            if state.json_mode:
+                call_kwargs["response_format"] = {"type": "json_object"}
+            # JSON mode (response_format json_object) e' incompatibile col tool calling:
+            # il modello emetterebbe un blob JSON testuale invece di tool calls native.
+            if state.tools_enabled and schemas and not state.json_mode:
+                call_kwargs["tools"] = schemas
 
-        state.record_usage(prompt_tok, completion_tok)
-
-        assistant_msg: dict[str, Any] = {"role": "assistant", "content": content or None}
-        if tool_calls:
-            assistant_msg["tool_calls"] = tool_calls
-        state.messages.append(assistant_msg)
-        if state.logger:
-            state.logger.log(
-                "assistant",
-                model=state.model.id,
-                content=content,
-                tool_calls=len(tool_calls),
-                usage={"prompt": prompt_tok, "completion": completion_tok},
-            )
-
-        if not tool_calls:
-            # Risposta finale: token e costo come nel vecchio chat.py
-            print()
-            if prompt_tok or completion_tok:
-                cost = prompt_tok * state.model.price_prompt + completion_tok * state.model.price_completion
-                print(f"[{prompt_tok} tok in / {completion_tok} tok out · ${cost:.6f}]")
-            print()
-            return
-
-        print()
-        for tool_call in tool_calls:
             try:
-                result = run_tool_call(tools_by_name, tool_call)
-            except KeyboardInterrupt:
-                # Ctrl+C durante uno strumento (es. run_command): il tool ha gia'
-                # ucciso il processo figlio; qui annullo il turno e torno al prompt
-                print("\n[Interrotto] esecuzione strumento annullata dall'utente (Ctrl+C).")
+                stream = client.chat.completions.create(**call_kwargs)
+                content, tool_calls, prompt_tok, completion_tok = _consume_stream(stream)
+            except APIStatusError as exc:
+                if state.tools_enabled and "tools" in call_kwargs and _tools_unsupported_error(exc):
+                    # Degradazione: il provider non supporta i tool, riprovo senza (avviso una volta)
+                    state.tools_enabled = False
+                    print("\n[Avviso] questo provider non supporta strumenti: continuo senza tools.")
+                    continue
+                print(f"\n[Errore API {exc.status_code}] {exc.message}")
                 del state.messages[rewind_index:]
                 return
-            state.tool_calls_count += 1
-            name = tool_call["function"]["name"]
-            print(
-                f"  step {step}/{MAX_AGENT_STEPS} · +{fmt_tokens(prompt_tok)} in · "
-                f"+{fmt_tokens(completion_tok)} out · {name} → {_summarize(result)}"
-            )
-            state.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call["id"],
-                    "name": name,
-                    "content": result,
-                }
-            )
-            if state.logger:
-                state.logger.log("tool", tool_call_id=tool_call["id"], name=name, content=result)
+            except APIConnectionError as exc:
+                print(f"\n[Errore di connessione] {exc}")
+                del state.messages[rewind_index:]
+                return
+            except APIError as exc:
+                # Catch-all per errori generici del provider (es. "Provider returned error")
+                print(f"\n[Errore provider] {exc}")
+                del state.messages[rewind_index:]
+                return
+            except KeyboardInterrupt:
+                # Ctrl+C durante lo streaming: annulla il turno, torna al prompt
+                print("\n[Interrotto] turno annullato dall'utente (Ctrl+C).")
+                del state.messages[rewind_index:]
+                return
 
-    print(f"\n[Guard rail] raggiunto il limite di {MAX_AGENT_STEPS} step: interrompo il loop.\n")
+            state.record_usage(prompt_tok, completion_tok)
+
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": content or None}
+            if tool_calls:
+                assistant_msg["tool_calls"] = tool_calls
+            state.messages.append(assistant_msg)
+            if state.logger:
+                state.logger.log(
+                    "assistant",
+                    model=state.model.id,
+                    content=content,
+                    tool_calls=len(tool_calls),
+                    usage={"prompt": prompt_tok, "completion": completion_tok},
+                )
+
+            if not tool_calls:
+                # Risposta finale: token e costo dell'ultima chiamata, poi il tempo del
+                # turno intero e quello speso finora nella sessione.
+                state.record_time(time.perf_counter() - inizio)
+                tempo_registrato = True
+                print()
+                if prompt_tok or completion_tok:
+                    cost = prompt_tok * state.model.price_prompt + completion_tok * state.model.price_completion
+                    print(
+                        f"[{prompt_tok} tok in / {completion_tok} tok out · ${cost:.6f}"
+                        f" · {fmt_duration(state.last_seconds)} · {fmt_duration(state.total_seconds)} tot]"
+                    )
+                else:
+                    print(f"[{fmt_duration(state.last_seconds)} · {fmt_duration(state.total_seconds)} tot]")
+                print()
+                return
+
+            print()
+            for tool_call in tool_calls:
+                try:
+                    result = run_tool_call(tools_by_name, tool_call)
+                except KeyboardInterrupt:
+                    # Ctrl+C durante uno strumento (es. run_command): il tool ha gia'
+                    # ucciso il processo figlio; qui annullo il turno e torno al prompt
+                    print("\n[Interrotto] esecuzione strumento annullata dall'utente (Ctrl+C).")
+                    del state.messages[rewind_index:]
+                    return
+                state.tool_calls_count += 1
+                name = tool_call["function"]["name"]
+                print(
+                    f"  step {step}/{MAX_AGENT_STEPS} · +{fmt_tokens(prompt_tok)} in · "
+                    f"+{fmt_tokens(completion_tok)} out · {name} → {_summarize(result)}"
+                )
+                state.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call["id"],
+                        "name": name,
+                        "content": result,
+                    }
+                )
+                if state.logger:
+                    state.logger.log("tool", tool_call_id=tool_call["id"], name=name, content=result)
+
+        print(f"\n[Guard rail] raggiunto il limite di {MAX_AGENT_STEPS} step: interrompo il loop.\n")
+    finally:
+        if not tempo_registrato:
+            state.record_time(time.perf_counter() - inizio)

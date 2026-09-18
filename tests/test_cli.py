@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from types import SimpleNamespace
 
 from prompt_toolkit.document import Document
 
-from ernesto.cli import COMMANDS, _CommandCompleter, handle_command
+from ernesto.cli import COMMANDS, _CommandCompleter, compose_prompt, handle_command, resolve_json_mode
+from ernesto.models import ModelConfig
 
 
 def test_ogni_comando_ha_una_descrizione() -> None:
@@ -50,3 +52,40 @@ def test_completer_muto_sul_testo_normale() -> None:
 def test_skill_nel_completamento() -> None:
     """/skill compare fra i comandi proposti."""
     assert "/skill" in _proposte("/sk")
+
+
+def test_prompt_file_da_solo(tmp_path: Path) -> None:
+    """Con il solo --prompt-file il turno e' il contenuto del file."""
+    f = tmp_path / "istruzioni.md"
+    f.write_text("Analizza questo testo.", encoding="utf-8")
+    assert compose_prompt(None, f) == "Analizza questo testo."
+
+
+def test_prompt_file_precede_il_messaggio(tmp_path: Path) -> None:
+    """Il file fa da contesto, il messaggio da istruzione: in quest'ordine."""
+    f = tmp_path / "dati.md"
+    f.write_text("riga uno\nriga due", encoding="utf-8")
+    assert compose_prompt("riassumi", f) == "riga uno\nriga due\n\nriassumi"
+
+
+def test_senza_file_il_prompt_resta_intatto() -> None:
+    assert compose_prompt("ciao", None) == "ciao"
+    assert compose_prompt(None, None) is None
+
+
+def test_json_mode_dalla_riga_di_comando() -> None:
+    """--json attiva il JSON mode anche quando config.yaml non dice niente."""
+    modello = ModelConfig("Test", "test/model", json_supported=True, schema_supported=False)
+    assert resolve_json_mode(flag=True, configured=False, model=modello) is True
+
+
+def test_json_mode_predefinito_spento() -> None:
+    """Senza --json e senza configurazione il JSON mode resta disattivo."""
+    modello = ModelConfig("Test", "test/model", json_supported=True, schema_supported=False)
+    assert resolve_json_mode(flag=False, configured=False, model=modello) is False
+
+
+def test_json_mode_ignorato_dai_modelli_che_non_lo_supportano() -> None:
+    """Chiederlo a un modello senza response_format non lo attiva: lo ignorerebbe o darebbe errore."""
+    modello = ModelConfig("Test", "test/model", json_supported=False, schema_supported=False)
+    assert resolve_json_mode(flag=True, configured=True, model=modello) is False

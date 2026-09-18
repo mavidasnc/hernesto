@@ -48,7 +48,9 @@ errore API, di `KeyboardInterrupt` o di provider che non supporta i tool, la sto
 riavvolta a `rewind_index` (l'ultimo messaggio utente) invece di restare inconsistente.
 
 `SessionState` (`ernesto/session.py`) è lo stato condiviso: messaggi, flag
-(`json_mode`, `yolo`, `dry_run`, `tools_enabled`), cumulativi di token e costo, logger.
+(`json_mode`, `yolo`, `dry_run`, `tools_enabled`), cumulativi di token, costo e tempo
+(`record_time`, alimentato dal `finally` di `run_turn` perché anche i turni interrotti
+contino), logger.
 Viene **iniettato in ogni strumento** al momento della costruzione: è così che i tool
 conoscono la workdir della sandbox e i flag di sicurezza. Non esiste stato globale.
 

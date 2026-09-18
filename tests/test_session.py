@@ -11,6 +11,7 @@ from ernesto.session import (
     SessionLogger,
     SessionState,
     compact_tool_results,
+    fmt_duration,
     fmt_tokens,
     mask_secret,
     session_snapshot,
@@ -61,6 +62,29 @@ def test_fmt_tokens() -> None:
     assert fmt_tokens(340) == "340"
     assert fmt_tokens(24100) == "24.1k"
     assert fmt_tokens(1_200_000) == "1.2M"
+
+
+def test_fmt_duration() -> None:
+    """Sotto il minuto i decimi di secondo, sopra minuti e secondi."""
+    assert fmt_duration(8.34) == "8,3s"
+    assert fmt_duration(0.04) == "0,0s"
+    assert fmt_duration(59.9) == "59,9s"
+    assert fmt_duration(65) == "1m 05s"
+    assert fmt_duration(3600) == "60m 00s"
+
+
+def test_record_time_cumula(state: SessionState) -> None:
+    """Il tempo di ogni turno si somma a quello della sessione."""
+    state.record_time(2.0)
+    state.record_time(3.5)
+    assert state.last_seconds == 3.5
+    assert state.total_seconds == 5.5
+
+
+def test_snapshot_conserva_il_tempo(state: SessionState) -> None:
+    """Il tempo accumulato entra nell'istantanea, come token e costo."""
+    state.record_time(7.25)
+    assert session_snapshot(state)["secondi"] == 7.25
 
 
 def test_refresh_system_prompt_updates_message_zero(state: SessionState) -> None:
