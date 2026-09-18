@@ -9,6 +9,13 @@ compact:
   summary_model: qwen/qwen3.8-27b
   llm_summary: false
 
+newsletter:
+  # Progetto newsletter-fetcher: query_articles.py + data/newsletter.db.
+  # Se assente, il tool cerca ../newsletter rispetto alla workdir.
+  dir: C:/Users/maurizio.MAVIDA/Claude/experiments/newsletter
+  # Finestra predefinita della rassegna, in giorni indietro da oggi.
+  days: 4
+
 safety:
   # Si sommano ai pattern di default (rm distruttivo, sudo, git push, git reset --hard,
   # docker system prune). Qui i comandi che fanno danni sui progetti reali.

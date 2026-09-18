@@ -219,6 +219,7 @@ leggibili e scrivibili dagli strumenti `read_file`/`write_file`.
 | `imap_read` | Legge un messaggio: intestazioni, corpo in testo, allegati |
 | `imap_move` | Sposta un messaggio in un'altra cartella |
 | `imap_delete` | Sposta un messaggio nel cestino (sotto conferma) |
+| `newsletter_query` | Interroga l'archivio articoli del progetto newsletter (DB SQLite), con marcatura sotto conferma |
 | `mcp__<server>__<tool>` | Strumenti da server MCP configurati in `mcp.json` (opzionale) |
 
 ### MCP (opzionale)
@@ -284,6 +285,12 @@ Copia `context/config.yaml` nella cartella di lavoro del progetto (o lascia quel
 in `~/.config/ernesto/context/`) per impostare il modello iniziale, il modello usato per i riassunti
 della compattazione e i pattern pericolosi aggiuntivi. Vince il primo file trovato; tutte
 le chiavi sono opzionali e un file malformato viene ignorato senza bloccare l'avvio.
+
+La sezione `newsletter` pilota lo strumento `newsletter_query`: `dir` è il percorso del
+progetto newsletter-fetcher (se assente si prova `../newsletter` rispetto alla cartella di
+lavoro) e `days` la finestra predefinita della rassegna (4 giorni). Il playbook
+`playbooks/rassegna-newsletter.md` descrive la procedura completa: selezione degli articoli
+non processati, riassunto in italiano e invio via email in HTML.
 
 ## Uso non presidiato
 

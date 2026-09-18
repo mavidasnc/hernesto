@@ -55,6 +55,7 @@ def build_native_tools(state: SessionState, confirm_fn: ConfirmFn) -> list[Tool]
     from .filesystem import EditFileTool, ListFilesTool, ReadFileTool, WriteFileTool
     from .imap import ImapDeleteTool, ImapFoldersTool, ImapListTool, ImapMoveTool, ImapReadTool
     from .mail import SendEmailTool
+    from .newsletter import NewsletterQueryTool
     from .shell import RunCommandTool
     from .web import BraveSearchTool, FetchUrlTool
 
@@ -67,6 +68,7 @@ def build_native_tools(state: SessionState, confirm_fn: ConfirmFn) -> list[Tool]
         BraveSearchTool(),
         FetchUrlTool(),
         SendEmailTool(state, confirm_fn),
+        NewsletterQueryTool(state, confirm_fn),
         ImapFoldersTool(state),
         ImapListTool(state),
         ImapReadTool(state),

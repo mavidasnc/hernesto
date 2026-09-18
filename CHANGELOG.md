@@ -5,6 +5,14 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.13.0] - 2026-09-18
+
+### Aggiunto
+- **`newsletter_query`**: interroga l'archivio degli articoli AI raccolti dal progetto newsletter (cartella parallela, DB SQLite) lanciando il suo `query_articles.py` in subprocess con l'interprete corrente: lo script e' stdlib-only, quindi niente dipendenza dal venv dell'altro progetto. Filtri per finestra in giorni (`days`, default da `newsletter.days` in `config.yaml`, altrimenti 4), fonte, id puntuale, contenuto esteso e conteggio. Con `ids` il filtro temporale si disattiva: e' la fase due, la rilettura integrale della sola shortlist. I contenuti estesi vengono tagliati a 2000 caratteri per articolo: venti articoli interi da diecimila caratteri saturerebbero la storia a ogni step successivo.
+- **Marcatura degli articoli elaborati** con `mark_processed=true`: scrive su un DB fuori dalla sandbox, quindi chiede conferma come `LEVEL_WARNING` e in dry-run simula. La scrittura resta nello script del progetto newsletter, che la marcia solo sulle righe gia' restituite dalla stessa selezione.
+- **`playbooks/rassegna-newsletter.md`**: la procedura "novita' AI via email": conteggio, panoramica a estratti, lettura integrale della shortlist, dieci articoli scelti per significativita', email HTML essenziale con titolo, fonte, data, riassunto in italiano e link, e marcatura di tutto il lotto valutato solo dopo l'invio riuscito. Il lotto si marca intero, non solo i dieci inviati, altrimenti il backlog non processato crescerebbe a ogni giro.
+- Sezione `newsletter` (`dir`, `days`) in `context/config.yaml`.
+
 ## [0.12.0] - 2026-09-18
 
 ### Cambiato

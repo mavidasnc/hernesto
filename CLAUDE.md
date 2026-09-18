@@ -137,6 +137,10 @@ skill in `SessionState.loaded_skills`, riletti da disco a ogni composizione del 
   aggirerebbe `imap_delete`. Il ramo di autenticazione fallita non interpola mai
   l'eccezione, che contiene il comando di login con la password. I nomi degli allegati si
   ripuliscono e passano comunque da `resolve_in_sandbox()`.
+- **Newsletter (`tools/newsletter.py`)**: il tool lancia `query_articles.py` del progetto
+  parallelo (fuori sandbox) in subprocess, in sola lettura; l'unica scrittura è
+  `mark_processed`, che chiede conferma `LEVEL_WARNING` e rispetta il dry-run. Il DB resta
+  di proprietà del progetto newsletter: niente accesso SQLite diretto da ernesto.
 - **Cartelle generate → `NOISE_DIRS`** (`tools/filesystem.py`): una ricorsione di
   `list_files` che le includa inietta migliaia di token di rumore in *ogni* step del loop.
 - **Segreti mai in chiaro**: `SessionLogger` maschera i valori noti nel JSONL; niente

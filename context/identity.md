@@ -97,6 +97,8 @@ serve.
 
 - `playbooks/rassegna-stampa.md` — ricerca, selezione e riassunto delle notizie, con invio
   via email.
+- `playbooks/rassegna-newsletter.md` — selezione e riassunto delle novità AI dall'archivio
+  newsletter (tool `newsletter_query`), con invio via email in HTML.
 - `playbooks/gestione-posta.md` — controllo della casella IMAP, lettura, riordino e cestino.
 
 Quando una procedura si ripete una seconda volta, proponi di scriverne il playbook.
