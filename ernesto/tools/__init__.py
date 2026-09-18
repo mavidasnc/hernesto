@@ -57,6 +57,7 @@ def build_native_tools(state: SessionState, confirm_fn: ConfirmFn) -> list[Tool]
     from .mail import SendEmailTool
     from .newsletter import NewsletterQueryTool
     from .shell import RunCommandTool
+    from .telegram import TelegramReadTool, TelegramSendTool
     from .web import BraveSearchTool, FetchUrlTool
 
     return [
@@ -69,6 +70,8 @@ def build_native_tools(state: SessionState, confirm_fn: ConfirmFn) -> list[Tool]
         FetchUrlTool(),
         SendEmailTool(state, confirm_fn),
         NewsletterQueryTool(state, confirm_fn),
+        TelegramSendTool(state, confirm_fn),
+        TelegramReadTool(),
         ImapFoldersTool(state),
         ImapListTool(state),
         ImapReadTool(state),

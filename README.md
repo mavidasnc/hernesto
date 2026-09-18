@@ -220,6 +220,8 @@ leggibili e scrivibili dagli strumenti `read_file`/`write_file`.
 | `imap_move` | Sposta un messaggio in un'altra cartella |
 | `imap_delete` | Sposta un messaggio nel cestino (sotto conferma) |
 | `newsletter_query` | Interroga l'archivio articoli del progetto newsletter (DB SQLite), con marcatura sotto conferma |
+| `telegram_send` | Invia un messaggio Telegram tramite bot (al canale di default o a una chat, sotto conferma) |
+| `telegram_read` | Legge gli aggiornamenti recenti ricevuti dal bot Telegram (non la cronologia) |
 | `mcp__<server>__<tool>` | Strumenti da server MCP configurati in `mcp.json` (opzionale) |
 
 ### MCP (opzionale)

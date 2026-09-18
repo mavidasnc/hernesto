@@ -5,6 +5,12 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.16.0] - 2026-09-18
+
+### Aggiunto
+- **`telegram_send` e `telegram_read`**: messaggi Telegram tramite Bot API. L'invio va al canale di default (`TELEGRAM_CHAT_ID`) o a una chat passata a chiamata, chiede conferma come azione esterna e spezza i testi oltre i 4096 caratteri sui confini di riga; `parse_mode` opzionale (HTML/MarkdownV2). La lettura usa `getUpdates` senza consumare la coda: restituisce gli aggiornamenti recenti (messaggi diretti e post dei canali dove il bot e' amministratore), non la cronologia, che la Bot API non espone.
+- Credenziali `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` documentate in `credentials.md`.
+
 ## [0.15.0] - 2026-09-18
 
 ### Aggiunto
