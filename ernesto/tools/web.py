@@ -143,6 +143,17 @@ class _TextExtractor(HTMLParser):
         return _BLANK_LINES_RE.sub("\n\n", "\n".join(line for line in lines if line))
 
 
+def html_to_text(html: str) -> tuple[str, str]:
+    """Titolo e testo visibile di un documento HTML.
+
+    Usata da fetch_url per le pagine web e da imap_read per i corpi delle email: sono
+    lo stesso problema, ridurre HTML a testo leggibile per il modello.
+    """
+    parser = _TextExtractor()
+    parser.feed(html)
+    return parser.title, parser.text()
+
+
 class FetchUrlTool(Tool):
     """Scarica una pagina web e ne restituisce il testo leggibile."""
 
@@ -183,9 +194,7 @@ class FetchUrlTool(Tool):
         raw = resp.content[:FETCH_MAX_BYTES]
         body = raw.decode(resp.encoding or "utf-8", errors="replace")
         if "html" in content_type:
-            parser = _TextExtractor()
-            parser.feed(body)
-            title, text = parser.title, parser.text()
+            title, text = html_to_text(body)
         else:
             title, text = "", body.strip()
         note = ""

@@ -125,6 +125,13 @@ skill in `SessionState.loaded_skills`, riletti da disco a ogni composizione del 
   `response_format: json_object` alcuni provider descrivono la tool call in JSON testuale
   invece di eseguirla; `run_turn` omette i `tools` quando `json_mode` è attivo, e ci sono
   test di regressione su entrambi i rami.
+- **Posta in arrivo (`tools/imap.py`)**: ogni `fetch` passa `mark_seen=False`, perché in
+  `imap-tools` il valore predefinito è `True` e leggere segnerebbe come letta la posta che
+  l'utente non ha ancora aperto. La conferma dipende dalla **destinazione** e non dallo
+  strumento: qualunque spostamento verso il cestino la chiede, altrimenti `imap_move`
+  aggirerebbe `imap_delete`. Il ramo di autenticazione fallita non interpola mai
+  l'eccezione, che contiene il comando di login con la password. I nomi degli allegati si
+  ripuliscono e passano comunque da `resolve_in_sandbox()`.
 - **Cartelle generate → `NOISE_DIRS`** (`tools/filesystem.py`): una ricorsione di
   `list_files` che le includa inietta migliaia di token di rumore in *ogni* step del loop.
 - **Segreti mai in chiaro**: `SessionLogger` maschera i valori noti nel JSONL; niente

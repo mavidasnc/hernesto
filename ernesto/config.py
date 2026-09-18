@@ -13,6 +13,16 @@ MAX_AGENT_STEPS = 30
 # si guarda a turno finito, quando il costo e' noto (l'usage arriva con la risposta).
 DEFAULT_MAX_COST = 2.0
 TOOL_OUTPUT_LIMIT = 8000
+
+# Posta in arrivo. I tetti servono al contesto piu' che al server: la storia viene rimandata
+# al modello a ogni step, e la compattazione automatica scatta troppo tardi per salvarci da
+# una newsletter da 15.000 token (soglia 30.000, ultimi tre giri sempre integrali).
+IMAP_TIMEOUT = 30.0
+IMAP_DEFAULT_LIMIT = 20     # messaggi per elencazione
+IMAP_MAX_LIMIT = 50         # tetto rigido: oltre, l'elenco domina il prompt
+IMAP_BODY_CHARS = 4000      # corpo restituito da imap_read, piu' basso dei 6000 di fetch_url
+IMAP_SUBJECT_CHARS = 80     # oggetti-fiume delle newsletter troncati nell'elenco
+IMAP_MAX_ATTACHMENT_BYTES = 10_000_000
 STDERR_OUTPUT_LIMIT = 2000  # stderr ha un tetto piu' basso: e' rumore piu' spesso che segnale
 LOG_CONTENT_LIMIT = 4000
 MAX_LIST_ENTRIES = 500

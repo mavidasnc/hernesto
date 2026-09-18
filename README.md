@@ -12,7 +12,8 @@ e aggiunge un loop agentico completo con strumenti e policy di sicurezza.
 
 - Python 3.10+
 - Una chiave API OpenRouter (`OPENROUTER_API_KEY`)
-- Opzionali: `BRAVE_API_KEY` (ricerca web), `RESEND_API_KEY` + `RESEND_FROM` (email)
+- Opzionali: `BRAVE_API_KEY` (ricerca web), `RESEND_API_KEY` + `RESEND_FROM` (invio email),
+  `IMAP_HOST` + `IMAP_USER` + `IMAP_PASSWORD` (posta in arrivo)
 
 ## Installazione
 
@@ -212,7 +213,12 @@ leggibili e scrivibili dagli strumenti `read_file`/`write_file`.
 | `run_command` | Esegue un comando di shell nella cartella di lavoro |
 | `brave_search` | Ricerca web via Brave Search API |
 | `fetch_url` | Scarica una pagina e ne restituisce il testo leggibile |
-| `send_email` | Invio email via Resend |
+| `send_email` | Invio email via Resend, in testo e opzionalmente in HTML |
+| `imap_folders` | Cartelle della casella IMAP con messaggi totali e non letti |
+| `imap_list` | Messaggi di una cartella, dal più recente, filtrabili |
+| `imap_read` | Legge un messaggio: intestazioni, corpo in testo, allegati |
+| `imap_move` | Sposta un messaggio in un'altra cartella |
+| `imap_delete` | Sposta un messaggio nel cestino (sotto conferma) |
 | `mcp__<server>__<tool>` | Strumenti da server MCP configurati in `mcp.json` (opzionale) |
 
 ### MCP (opzionale)
@@ -300,6 +306,14 @@ nell'Utilità di pianificazione. Tre avvertenze:
   assoluti e le risalite con `..` fanno scattare una richiesta di conferma (euristica
   sul testo del comando, aggirabile: serve contro la disattenzione, non contro un
   modello che voglia eluderla).
+- **Posta in arrivo**: leggere ed elencare non chiede conferma, spostare nel cestino sì,
+  con etichetta distruttiva, e la chiede anche `imap_move` quando la destinazione è il
+  cestino, altrimenti sarebbe la scorciatoia per eliminare senza passare da `imap_delete`.
+  Gli allegati si salvano solo su richiesta esplicita e il nome dichiarato nella email viene
+  ripulito prima di passare, comunque, dalla sandbox. Il corpo di un messaggio arriva al
+  modello incorniciato da un avviso: è testo scritto da terzi, quindi materiale da leggere e
+  non istruzioni da eseguire. Con `--yolo` quella cornice resta ma le conferme no: una
+  casella aperta e nessuna conferma è la combinazione da evitare.
 - **Conferme**: prima di `send_email` e di comandi che matchano la denylist
   (`rm -rf`, `sudo`, `git push`, `git reset --hard`, `docker system prune`, …)
   viene chiesta conferma, con etichetta e colore diversi a seconda della gravità

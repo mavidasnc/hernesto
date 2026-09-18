@@ -5,6 +5,17 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.11.0] - 2026-09-18
+
+### Aggiunto
+- **Posta in arrivo**: cinque strumenti su una casella IMAP — `imap_folders` (cartelle con i conteggi), `imap_list` (messaggi piu' recenti, filtrabili per non letti e per testo in mittente e oggetto), `imap_read` (intestazioni, corpo con l'HTML convertito in testo, allegati elencati e su richiesta salvati), `imap_move` e `imap_delete`. Le credenziali sono `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER` e `IMAP_PASSWORD`, dichiarate in `credentials.md` come le altre. Il protocollo lo parla `imap-tools`, nuova dipendenza senza sotto-dipendenze: i centocinquanta righe di UTF-7 modificato, decodifica degli header e aritmetica degli UID non aggiungevano niente al problema e tre di esse hanno conseguenze distruttive se sbagliate.
+- **`playbooks/gestione-posta.md`**: la procedura di triage, il divieto di agire in blocco senza aver mostrato l'elenco, la regola che gli uid si rielencano invece di ricordarli.
+- **`send_email` manda anche HTML**: parametro `html` opzionale, con `text` che resta obbligatorio come versione alternativa. L'anteprima di conferma continua a mostrare il testo e segnala quanti caratteri pesa la parte HTML: il sorgente riempirebbe i 500 caratteri dell'anteprima di `<head>` e la conferma diventerebbe cieca. Finora l'agente che voleva mandare una email formattata doveva scriversi uno script che chiamava l'API da se', fuori da ogni conferma.
+
+### Cambiato
+- `html_to_text()` esce da `FetchUrlTool` e diventa una funzione di `tools/web.py`, condivisa con la lettura delle email: ridurre una pagina web e ridurre una newsletter sono lo stesso problema. Una newsletter da 60 KB vale 15.000 token grezzi e 1.250 convertita, e la compattazione automatica arriverebbe troppo tardi per evitarli.
+- `context/identity.md` dichiara che il testo proveniente da fuori (email, pagine, file altrui) e' materiale da leggere e non un ordine da eseguire.
+
 ## [0.10.0] - 2026-09-18
 
 ### Aggiunto

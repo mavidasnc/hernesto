@@ -249,3 +249,53 @@ def test_send_email_livello_esterno(monkeypatch: pytest.MonkeyPatch, state: Sess
 
     SendEmailTool(state, confirm).run(to="a@b.com", subject="x", text="y")
     assert livelli == [LEVEL_EXTERNAL]
+
+
+def _cattura_payload(monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Sostituisce l'invio HTTP e restituisce il dizionario dove finisce il body."""
+    inviato: dict = {}
+
+    def post(*_a: object, **k: object) -> FakeResponse:
+        inviato.update(k.get("json") or {})
+        return FakeResponse({"id": "msg_html"})
+
+    monkeypatch.setattr("ernesto.tools.mail.httpx.post", post)
+    return inviato
+
+
+def test_send_email_con_html(monkeypatch: pytest.MonkeyPatch, state: SessionState) -> None:
+    """Con html valorizzato Resend riceve entrambe le parti: HTML e testo alternativo."""
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+    monkeypatch.setenv("RESEND_FROM", "chat@example.com")
+    inviato = _cattura_payload(monkeypatch)
+    tool = SendEmailTool(state, lambda message, preview=None, level='': True)
+    result = tool.run(to="a@b.com", subject="s", text="testo", html="<p>ciao</p>")
+    assert "msg_html" in result
+    assert inviato["html"] == "<p>ciao</p>"
+    assert inviato["text"] == "testo"
+
+
+def test_send_email_senza_html_non_manda_il_campo(monkeypatch: pytest.MonkeyPatch, state: SessionState) -> None:
+    """Senza html la chiave non compare affatto nel payload."""
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+    monkeypatch.setenv("RESEND_FROM", "chat@example.com")
+    inviato = _cattura_payload(monkeypatch)
+    SendEmailTool(state, lambda message, preview=None, level='': True).run(to="a@b.com", subject="s", text="t")
+    assert "html" not in inviato
+
+
+def test_anteprima_non_mostra_il_sorgente_html(monkeypatch: pytest.MonkeyPatch, state: SessionState) -> None:
+    """L'anteprima resta leggibile: segnala l'HTML senza riversarcelo dentro."""
+    monkeypatch.setenv("RESEND_API_KEY", "test-key")
+    monkeypatch.setenv("RESEND_FROM", "chat@example.com")
+    anteprime: list[str] = []
+
+    def confirm(message: str, preview: str | None = None, level: str = "") -> bool:
+        anteprime.append(preview or "")
+        return False
+
+    sorgente = "<html><head><style>" + "a{color:red}" * 50 + "</style></head><body>ciao</body></html>"
+    SendEmailTool(state, confirm).run(to="a@b.com", subject="s", text="testo leggibile", html=sorgente)
+    assert "testo leggibile" in anteprime[0]
+    assert "<style>" not in anteprime[0]
+    assert f"[+ corpo HTML, {len(sorgente)} caratteri]" in anteprime[0]
