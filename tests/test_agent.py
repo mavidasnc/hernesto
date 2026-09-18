@@ -92,6 +92,31 @@ def _fake_client(captured: dict) -> SimpleNamespace:
     return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
 
 
+def _conn_lost() -> Exception:
+    """L'errore di OpenRouter quando la connessione cade a meta' stream."""
+    import httpx
+    from openai import APIConnectionError
+
+    return APIConnectionError(message="Network connection lost", request=httpx.Request("POST", "http://test"))
+
+
+def _client_che_cade(fallimenti: int) -> SimpleNamespace:
+    """Client finto che perde la connessione `fallimenti` volte, poi risponde."""
+    chunk = SimpleNamespace(
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        choices=[SimpleNamespace(delta=SimpleNamespace(content="ok", tool_calls=None))],
+    )
+    rimasti = {"n": fallimenti}
+
+    def create(**kwargs: object) -> list[SimpleNamespace]:
+        if rimasti["n"] > 0:
+            rimasti["n"] -= 1
+            raise _conn_lost()
+        return [chunk]
+
+    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+
+
 def _fake_state(json_mode: bool) -> SimpleNamespace:
     return SimpleNamespace(
         model=ModelConfig("Test", "test/model", json_supported=True, schema_supported=False),
@@ -145,6 +170,82 @@ def test_auto_compact_triggers_above_threshold(state: SessionState) -> None:
     assert state.compacted_count > 0
     assert state.compacted_tokens > 0
     assert any(COMPACT_PREFIX in str(m.get("content") or "") for m in captured["messages"])
+
+
+def test_compact_confirm_rifiutata(state: SessionState) -> None:
+    """Se l'utente rifiuta, la storia resta integra e non si compatta."""
+    state.messages.extend(_storia_con_tool(turni=8, content="x" * (COMPACT_THRESHOLD_TOKENS // 2)))
+    captured: dict = {}
+    run_turn(state, _fake_client(captured), [EchoTool()], compact_confirm=lambda tokens: False)
+    assert state.compacted_count == 0
+
+
+def test_compact_confirm_chiesta_una_volta(state: SessionState) -> None:
+    """La conferma arriva una sola volta per turno e riceve la stima dei token."""
+    state.messages.extend(_storia_con_tool(turni=8, content="x" * (COMPACT_THRESHOLD_TOKENS // 2)))
+    stime: list[int] = []
+
+    def confirm(tokens: int) -> bool:
+        stime.append(tokens)
+        return True
+
+    run_turn(state, _fake_client({}), [EchoTool()], compact_confirm=confirm)
+    assert len(stime) == 1
+    assert stime[0] > COMPACT_THRESHOLD_TOKENS
+    assert state.compacted_count > 0
+
+
+def test_print_content_collassa_le_righe_vuote(capsys) -> None:
+    """Piu' righe vuote di fila diventano una sola, anche a cavallo dei delta."""
+    from ernesto.agent import _print_content
+
+    state = [0, 0]
+    for delta in ["paragrafo\n", "\n\n\nsecondo\n\n\n\n", "terzo"]:
+        _print_content(delta, state)
+    out = capsys.readouterr().out
+    assert "\n\n\n" not in out
+    assert out == "paragrafo\n\nsecondo\n\nterzo"
+
+
+def test_print_content_sopprime_gli_a_capo_iniziali(capsys) -> None:
+    """Prima del primo carattere visibile spazi e a-capo non si stampano."""
+    from ernesto.agent import _print_content
+
+    state = [0, 0]
+    for delta in ["\n\n", "\n  ", "\nrisposta"]:
+        _print_content(delta, state)
+    assert capsys.readouterr().out == "risposta"
+
+
+def test_print_content_turno_solo_a_capo_non_stampa_nulla(capsys) -> None:
+    """Nei turni con tool call il contenuto e' spesso solo \\n\\n: zero righe vuote."""
+    from ernesto.agent import _print_content
+
+    _print_content("\n\n\n", [0, 0])
+    assert capsys.readouterr().out == ""
+
+
+def test_connessione_persa_si_riprova(monkeypatch, capsys) -> None:
+    """Una caduta di rete a meta' stream non butta il turno: si ritenta e si conclude."""
+    monkeypatch.setattr("ernesto.agent.time.sleep", lambda _s: None)
+    state = _fake_state(json_mode=False)
+    run_turn(state, _client_che_cade(1), [EchoTool()])
+    out = capsys.readouterr().out
+    assert "Connessione persa" in out
+    assert "ok" in out
+    assert state.messages[-1]["role"] == "assistant"
+
+
+def test_connessione_persa_oltre_i_tentativi(monkeypatch, capsys) -> None:
+    """Esauriti i retry la storia torna al messaggio utente, senza residui."""
+    monkeypatch.setattr("ernesto.agent.time.sleep", lambda _s: None)
+    state = _fake_state(json_mode=False)
+    run_turn(state, _client_che_cade(99), [EchoTool()])
+    out = capsys.readouterr().out
+    assert "rinuncio" in out
+    # Il rewind torna all'ultimo messaggio utente escluso: la storia si svuota
+    # e il turno si puo' ridare da zero senza residui.
+    assert state.messages == []
 
 
 def test_tempo_del_turno_registrato(state: SessionState) -> None:

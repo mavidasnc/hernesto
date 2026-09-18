@@ -125,7 +125,10 @@ skill in `SessionState.loaded_skills`, riletti da disco a ogni composizione del 
   solo se `sys.stdout.isatty()`, come per il banner.
 - **La compattazione riscrive `content`, non rimuove mai messaggi**
   (`compact_tool_results` in `session.py`): così le coppie assistant-con-`tool_calls` /
-  `tool` restano accoppiate e `rewind_index` in `run_turn` resta valido.
+  `tool` restano accoppiate e `rewind_index` in `run_turn` resta valido. Sopra la soglia
+  (`COMPACT_THRESHOLD_TOKENS`) la compattazione è automatica in modalità non presidiata,
+  mentre in sessione interattiva `run_turn` la sottopone a `compact_confirm` una volta
+  per turno; il rifiuto non va al modello, semplicemente non si compatta.
 - **JSON mode e `tools` non vanno mai inviati insieme.** Con
   `response_format: json_object` alcuni provider descrivono la tool call in JSON testuale
   invece di eseguirla; `run_turn` omette i `tools` quando `json_mode` è attivo, e ci sono

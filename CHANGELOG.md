@@ -5,6 +5,28 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.15.0] - 2026-09-18
+
+### Aggiunto
+- **La compattazione automatica chiede conferma in sessione interattiva**: al superamento della soglia viene domandato una volta per turno se riassumere i vecchi risultati strumento (default si'; e' manutenzione, non un'azione pericolosa). In modalita' non presidiata resta automatica.
+- **Retry sulle cadute di rete a meta' stream**: "Network connection lost" arriva a risposta iniziata, dove i retry del SDK non operano. La chiamata e' idempotente e il parziale non e' ancora in storia, quindi `run_turn` la ripete identica fino a due volte con attesa crescente (5s, 10s), annunciando il tentativo per non sembrare una ripetizione del testo gia' stampato. Esauriti i tentativi la storia si riavvolge come prima.
+
+### Cambiato
+- **Soglia di compattazione da 60k a 90k token stimati**: sotto i 90k la storia resta integra; con i lotti di articoli della rassegna newsletter le soglie basse facevano partire la compattazione a meta' lavoro.
+- **Read timeout da 180s a 300s**: un provider lento su un prompt grande puo' stare minuti prima del primo token senza essere morto; se lo stream si arena davvero, il retry di `run_turn` rilancia la chiamata.
+- **L'agente si presenta come "Ernesto"** invece che col nome del modello, in ciano in grassetto sul terminale: in chat conta chi parla, il modello si legge nel banner e in `/context`.
+- **Niente piu' righe vuote a ripetizione in chat.** Due correzioni di stampa (la storia conserva il contenuto originale): gli a-capo e gli spazi prima del primo carattere visibile non si stampano — nei turni con tool call il modello emetteva solo "\n\n", che sommati al separatore delle righe di step davano due o tre righe vuote tra uno step e l'altro — e a risposta iniziata le righe vuote ripetute collassano a una sola.
+
+## [0.14.0] - 2026-09-18
+
+### Corretto
+- **Le chiamate API arenate non tengono piu' la sessione in stallo per dieci minuti.** Il client OpenAI nasceva col timeout di default del SDK (read 600s, due retry): un provider lento su prompt grandi sembrava una sessione morta e la rassegna newsletter si e' interrotta due volte a meta'. Ora il read timeout e' 180s: lo stream fermo fallisce in fretta e il SDK ritenta da solo.
+- **La compattazione non portava via gli id appena selezionati.** La soglia passa da 30k a 60k token stimati: con i lotti di articoli della rassegna (JSON da decine di migliaia di caratteri) a 30k la compattazione partiva a meta' lettura e il modello doveva recuperare gli id dal log di sessione.
+
+### Aggiunto
+- `newsletter_query` accetta `format="table"`: una riga per articolo (id, data, fonte, titolo) per la panoramica iniziale, che in JSON con estratti arrivava a ~19k token per 149 articoli. Il playbook la usa per la shortlist e legge i contenuti estesi a blocchi di al massimo 10 id.
+- Tetto dell'output di `newsletter_query` ridotto a 25.000 caratteri.
+
 ## [0.13.0] - 2026-09-18
 
 ### Aggiunto

@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 import questionary
 import typer
 from openai import OpenAI
@@ -23,6 +24,7 @@ from prompt_toolkit.styles import Style
 from . import __version__
 from .agent import run_turn
 from .config import (
+    API_READ_TIMEOUT,
     COMPACT_KEEP_RECENT,
     COMPACT_SUMMARY_MODEL,
     COMPACT_THRESHOLD_TOKENS,
@@ -165,6 +167,18 @@ def _prompt_rule() -> None:
         print("\033[2m" + "─" * width + "\033[0m")
 
 
+def _assistant_label() -> None:
+    """Etichetta che apre la risposta dell'agente: il nome, non il modello sotto.
+
+    In chat conta chi parla, non con quale modello: il modello si legge nel banner
+    e in `/context`. Ciano in grassetto, come il banner; senza colore fuori dal TTY.
+    """
+    if sys.stdout.isatty():
+        print("\033[1;36mErnesto\033[0m> ", end="", flush=True)
+    else:
+        print("Ernesto> ", end="", flush=True)
+
+
 # Etichette delle conferme per livello di gravita': solo ASCII, perche' la resa dei simboli
 # non e' garantita su tutti i terminali. Il colore segue la convenzione del banner: si
 # applica solo quando stdout e' un terminale.
@@ -283,6 +297,28 @@ def _decidi_da_solo(state: SessionState, message: str, level: str) -> bool:
         state.logger.log("conferma", esito="approvata", livello=level, richiesta=message)
     print(f"[conferma automatica] {message} → si (sessione non presidiata)")
     return True
+
+
+def make_compact_confirm() -> Callable[[int], bool]:
+    """Conferma della compattazione automatica, una volta per turno (solo interattivo).
+
+    La compattazione e' manutenzione interna, non un'azione pericolosa: il default e'
+    si'. Fuori dal terminale si compatta senza chiedere, come prima.
+    """
+
+    def confirm(tokens: int) -> bool:
+        if not sys.stdin.isatty():
+            return True
+        print(f"\n[Compattazione] la storia ha superato la soglia (~{fmt_tokens(tokens)} token).")
+        try:
+            answer = questionary.confirm(
+                "Compattare i risultati strumento piu' vecchi?", default=True
+            ).ask()
+        except (KeyboardInterrupt, EOFError):
+            return False
+        return bool(answer)
+
+    return confirm
 
 
 # ---------------------------------------------------------------------------
@@ -974,9 +1010,14 @@ def main(
         startup_warnings.append("[Avviso] JSON mode attivo: gli strumenti restano disattivati per la sessione.")
 
     api_key = os.environ["OPENROUTER_API_KEY"]
+    # Il default del SDK (read=600s, due retry) lascia una chiamata arenata in attesa
+    # fino a dieci minuti prima di ritentare: con prompt da decine di migliaia di token
+    # un provider lento sembra una sessione morta. Read piu' corto fa fallire in fretta
+    # lo stream fermo; a rilanciare la chiamata pensa run_turn (API_STREAM_RETRIES).
     client = OpenAI(
         base_url=OPENROUTER_BASE,
         api_key=api_key,
+        timeout=httpx.Timeout(connect=10.0, read=API_READ_TIMEOUT, write=60.0, pool=60.0),
         default_headers={
             "HTTP-Referer": "https://mavida.com",
             "X-Title": "Mavida Chat CLI",
@@ -1103,9 +1144,9 @@ def main(
         state.messages.append({"role": "user", "content": user_input})
         state.logger.log("user", content=user_input)
 
-        print(f"{state.model.label}> ", end="", flush=True)
+        _assistant_label()
         try:
-            run_turn(state, client, tools)
+            run_turn(state, client, tools, compact_confirm=make_compact_confirm())
         except KeyboardInterrupt:
             # Rete di sicurezza: run_turn gestisce gia' Ctrl+C, ma non si sa mai
             print("\n[Interrotto] turno annullato dall'utente (Ctrl+C).")

@@ -9,6 +9,14 @@ from typing import Any
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 MAX_AGENT_STEPS = 30
+# Timeout e retry delle chiamate API. Il read timeout copre il silenzio tra un chunk e
+# l'altro dello stream: 300s perche' un provider lento su un prompt grande puo' stare
+# minuti prima del primo token senza essere morto. Se la connessione cade lo stesso
+# ("Network connection lost" di OpenRouter), run_turn riprova la stessa chiamata: la
+# generazione e' idempotente e il contenuto parziale non e' ancora entrato in storia.
+API_READ_TIMEOUT = 300.0
+API_STREAM_RETRIES = 2
+API_RETRY_WAIT_SECONDS = 5.0
 # Tetto di spesa della sessione, in dollari. Non protegge dal singolo turno costoso:
 # si guarda a turno finito, quando il costo e' noto (l'usage arriva con la risposta).
 DEFAULT_MAX_COST = 2.0
@@ -31,8 +39,10 @@ MCP_TOOL_TIMEOUT = 60
 # Compattazione della storia: sopra la soglia i risultati degli strumenti piu' vecchi
 # diventano un riassunto deterministico. La soglia e' in token stimati e non in numero di
 # step perche' il costo dipende dai token: venti list_files sono innocui, tre read_file da
-# 8000 caratteri no.
-COMPACT_THRESHOLD_TOKENS = 30_000
+# 8000 caratteri no. 90k perche' le rassegne dalla newsletter leggono lotti di articoli
+# da migliaia di caratteri: con soglie basse la compattazione partiva a meta' lettura e
+# portava via al modello gli id appena selezionati.
+COMPACT_THRESHOLD_TOKENS = 90_000
 COMPACT_KEEP_RECENT = 3     # giri assistant+tool mantenuti integrali
 COMPACT_MIN_CHARS = 500     # sotto questa soglia il riassunto non risparmierebbe nulla
 COMPACT_HEAD_CHARS = 300    # testa del contenuto conservata nel riassunto

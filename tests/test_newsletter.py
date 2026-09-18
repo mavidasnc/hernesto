@@ -71,10 +71,19 @@ def test_argv_default(monkeypatch: pytest.MonkeyPatch, configured_state: Session
     NewsletterQueryTool(configured_state, _confirm_si).run()
     argv = calls[0]
     assert argv[1].endswith("query_articles.py")
+    assert argv[argv.index("--format") + 1] == "json"
     assert "--processed" in argv and argv[argv.index("--processed") + 1] == "0"
     assert argv[argv.index("--since") + 1] == (date.today() - timedelta(days=4)).isoformat()
     assert argv[argv.index("--until") + 1] == date.today().isoformat()
     assert "--full-content" not in argv
+
+
+def test_formato_table(monkeypatch: pytest.MonkeyPatch, configured_state: SessionState) -> None:
+    """La panoramica compatta passa --format table e l'output non viene toccato."""
+    calls = _mock_run(monkeypatch, FakeProc(stdout="[  688] 2026-09-18 | Fonte | titolo\n"))
+    result = NewsletterQueryTool(configured_state, _confirm_si).run(format="table")
+    assert calls[0][calls[0].index("--format") + 1] == "table"
+    assert result.startswith("[  688]")
 
 
 def test_ids_sostituiscono_le_date(monkeypatch: pytest.MonkeyPatch, configured_state: SessionState) -> None:

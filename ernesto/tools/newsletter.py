@@ -39,8 +39,9 @@ DEFAULT_LIMIT = 100
 # saturerebbero la storia a ogni step successivo del loop.
 FULL_CONTENT_CHARS = 2000
 # Tetto complessivo dell'output: piu' generoso di TOOL_OUTPUT_LIMIT perche'
-# la fase di lettura deve vedere tutta la shortlist in un colpo solo.
-OUTPUT_CHARS = 50_000
+# la fase di lettura deve vedere tutta la shortlist in un colpo solo, ma un
+# risultato da 50k caratteri superava da solo la vecchia soglia di compattazione.
+OUTPUT_CHARS = 25_000
 QUERY_TIMEOUT = 60.0
 
 
@@ -80,6 +81,14 @@ class NewsletterQueryTool(Tool):
             "full_content": {
                 "type": "boolean",
                 "description": "Includi il contenuto esteso (primi 2000 caratteri per articolo) invece dell'estratto",
+            },
+            "format": {
+                "type": "string",
+                "enum": ["json", "table"],
+                "description": (
+                    "json (default) per i contenuti, table per la panoramica iniziale: "
+                    "una riga per articolo (id, data, fonte, titolo), molto piu' compatta."
+                ),
             },
             "count_only": {
                 "type": "boolean",
@@ -123,6 +132,7 @@ class NewsletterQueryTool(Tool):
         source: str = "",
         ids: str = "",
         full_content: bool = False,
+        format: str = "json",
         count_only: bool = False,
         limit: int = DEFAULT_LIMIT,
         mark_processed: bool = False,
@@ -136,8 +146,9 @@ class NewsletterQueryTool(Tool):
                 "Configura newsletter.dir in context/config.yaml con il percorso del progetto newsletter."
             )
         days = days or self._default_days()
+        out_format = "count" if (count_only or mark_processed) else format
 
-        argv = [sys.executable, str(script), "--format", "json", "--processed", processed]
+        argv = [sys.executable, str(script), "--format", out_format, "--processed", processed]
         if ids:
             argv += ["--ids", ids]
         else:
@@ -149,7 +160,7 @@ class NewsletterQueryTool(Tool):
         if full_content:
             argv.append("--full-content")
         if count_only or mark_processed:
-            # Con --count lo script ignora il LIMIT: il numero e' reale e, in
+            # In formato count lo script ignora il LIMIT: il numero e' reale e, in
             # marcatura, l'UPDATE copre l'intera selezione invece dei primi N.
             argv.append("--count")
         argv += ["--limit", str(limit)]

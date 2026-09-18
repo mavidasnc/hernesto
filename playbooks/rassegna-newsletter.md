@@ -14,10 +14,12 @@ La fonte non è il web: gli articoli sono già stati scaricati da `fetch_article
    gli articoli non processati degli ultimi 4 giorni (configurabile con `newsletter.days`
    in `context/config.yaml`). Se la richiesta indica un arco diverso ("di ieri", "dell'ultima
    settimana"), traducilo in `days`. Se il conteggio è zero, dillo e fermati.
-2. **Panoramica**: `newsletter_query` sullo stesso lotto (senza `full_content`: arrivano
-   estratti di 300 caratteri). Scegli una shortlist di 15-20 id per titolo, fonte ed
-   estratto, scartando i contenuti promozionali e i duplicati evidenti.
-3. **Lettura**: `newsletter_query` con `ids` (CSV della shortlist) e `full_content=true`.
+2. **Panoramica**: `newsletter_query` con `format="table"` sullo stesso lotto: una riga per
+   articolo (id, data, fonte, titolo), compatta anche con centinaia di righe. Scegli una
+   shortlist di 15-20 id per titolo e fonte, scartando i contenuti promozionali e i
+   duplicati evidenti.
+3. **Lettura**: `newsletter_query` con `ids` (CSV di **al massimo 10 id per chiamata**) e
+   `full_content=true`; per una shortlist lunga fai due chiamate invece di una.
    Valuta i contenuti e seleziona i **10 articoli** con le notizie più significative e
    importanti: annunci di laboratorio, risultati di ricerca, cambi di scenario. Se i
    candidati validi sono meno di dieci, mandali tutti senza riempire con notizie deboli.
