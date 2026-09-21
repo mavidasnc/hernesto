@@ -70,7 +70,10 @@ def main() -> int:
             if risposta not in {"s", "si", "y", "yes"}:
                 print(f"- {name} lasciato invariato")
                 continue
-        dst.write_text(nuovo, encoding="utf-8")
+        # newline esplicito e non il fine riga della piattaforma: la copia deve
+        # restare identica alla sorgente, altrimenti su Windows esce con CRLF e la
+        # deduplica dei file di contesto di ernesto la vede sempre diversa.
+        dst.write_text(nuovo, encoding="utf-8", newline="\n")
         print(f"+ {name} -> {dst}")
 
     # Cartelle di lavoro: non stanno in git, quindi vanno ricreate dopo ogni clone

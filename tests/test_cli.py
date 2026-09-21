@@ -11,12 +11,14 @@ from prompt_toolkit.document import Document
 
 from ernesto.cli import (
     COMMANDS,
+    ExitSession,
     _CommandCompleter,
     budget_report,
     cmd_step,
     compose_prompt,
     handle_command,
     make_confirm_fn,
+    repl_interrupt,
     resolve_json_mode,
 )
 from ernesto.config import MAX_AGENT_STEPS
@@ -189,3 +191,17 @@ def test_sessione_interattiva_non_decide_da_sola(monkeypatch: pytest.MonkeyPatch
     )
     assert make_confirm_fn(stato)("Inviare questa email?", level=LEVEL_EXTERNAL) is True
     assert chiesto == ["Inviare questa email?"]
+
+
+def test_exit_chiude_la_sessione() -> None:
+    """/exit non e' un comando come gli altri: chiede di uscire dal REPL."""
+    with pytest.raises(ExitSession):
+        handle_command(SimpleNamespace(), "/exit", [], SimpleNamespace())  # type: ignore[arg-type]
+
+
+def test_primo_ctrl_c_avvisa_e_il_secondo_esce(capsys: pytest.CaptureFixture[str]) -> None:
+    """Uscire al primo Ctrl+C e' troppo facile da fare per sbaglio."""
+    assert repl_interrupt(False) is False
+    assert "premi di nuovo" in capsys.readouterr().out.lower()
+    assert repl_interrupt(True) is True
+    assert "Arrivederci" in capsys.readouterr().out

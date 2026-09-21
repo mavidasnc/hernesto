@@ -75,6 +75,10 @@ from .tools import (
 
 REASONING_LEVELS = ("low", "medium", "high", "xhigh")
 
+# Verde dei terminali a fosfori: indice 46 della tavolozza a 256 colori (#00ff00). E' il
+# colore dell'interfaccia di ernesto e si applica solo quando stdout e' un terminale.
+PHOSPHOR = "38;5;46"
+
 CREDENTIALS_TEMPLATE = """# Credenziali — progetto
 
 ## OPENROUTER_API_KEY
@@ -111,7 +115,17 @@ COMMANDS: list[tuple[str, str]] = [
     ("/log", "Percorso del log e riepilogo della sessione"),
     ("/cost", "Costo cumulativo della sessione"),
     ("/yolo", "Attiva o disattiva il bypass delle conferme"),
+    ("/exit", "Termina la sessione (come `exit` o `quit`)"),
 ]
+
+
+class ExitSession(Exception):
+    """Richiesta di chiudere la sessione arrivata da un comando slash.
+
+    handle_command restituisce un bool che dice se il comando era riconosciuto: non c'e'
+    posto per dire anche "adesso esci". L'eccezione evita di far passare un secondo valore
+    di ritorno per tutti i rami del dispatcher.
+    """
 
 
 def _configure_console() -> None:
@@ -157,7 +171,7 @@ def _print_banner(state: SessionState, logger: SessionLogger) -> None:
         print("\n".join(line for line in lines if line))
         return
     width = min(max(shutil.get_terminal_size().columns, 50), 100)
-    print("\033[36m" + "\n".join(_box_lines(lines, width)) + "\033[0m")
+    print(f"\033[{PHOSPHOR}m" + "\n".join(_box_lines(lines, width)) + "\033[0m")
 
 
 def _prompt_rule() -> None:
@@ -171,10 +185,10 @@ def _assistant_label() -> None:
     """Etichetta che apre la risposta dell'agente: il nome, non il modello sotto.
 
     In chat conta chi parla, non con quale modello: il modello si legge nel banner
-    e in `/context`. Ciano in grassetto, come il banner; senza colore fuori dal TTY.
+    e in `/context`. Verde fosforo in grassetto, come il banner; senza colore fuori dal TTY.
     """
     if sys.stdout.isatty():
-        print("\033[1;36mErnesto\033[0m> ", end="", flush=True)
+        print(f"\033[1;{PHOSPHOR}mErnesto\033[0m> ", end="", flush=True)
     else:
         print("Ernesto> ", end="", flush=True)
 
@@ -185,13 +199,13 @@ def _assistant_label() -> None:
 LEVEL_BADGES: dict[str, tuple[str, str]] = {
     LEVEL_DESTRUCTIVE: ("[!] DISTRUTTIVO", "31"),  # rosso
     LEVEL_EXTERNAL: ("[>] ESTERNO", "33"),         # giallo
-    LEVEL_WARNING: ("[?] ATTENZIONE", "36"),       # ciano, come il banner
+    LEVEL_WARNING: ("[?] ATTENZIONE", PHOSPHOR),   # verde fosforo, come il banner
 }
 
 
 def _badge(level: str) -> str:
     """Etichetta colorata del livello di conferma (senza colore fuori dal terminale)."""
-    label, color = LEVEL_BADGES.get(level, ("[ ] CONFERMA", "36"))
+    label, color = LEVEL_BADGES.get(level, ("[ ] CONFERMA", PHOSPHOR))
     return f"\033[{color}m{label}\033[0m" if sys.stdout.isatty() else label
 
 
@@ -257,6 +271,21 @@ def make_reader() -> Callable[[str], str]:
         return input(prompt)
 
     return leggi
+
+
+def repl_interrupt(armed: bool) -> bool:
+    """Ctrl+C al prompt: True se si esce, False se si avvisa e si resta.
+
+    Uscire al primo colpo e' facile da fare per sbaglio, credendo di essere in un'altra
+    finestra: il primo Ctrl+C avvisa e basta, il secondo di fila chiude. L'armamento non
+    sopravvive a una lettura riuscita, quindi due interruzioni lontane nel tempo non si
+    sommano.
+    """
+    if armed:
+        print("\nArrivederci!")
+        return True
+    print("\nPremi di nuovo Ctrl+C per uscire (oppure /exit).")
+    return False
 
 
 def make_confirm_fn(state: SessionState) -> ConfirmFn:
@@ -590,7 +619,7 @@ def cmd_command() -> None:
     for nome, descrizione in COMMANDS:
         print(f"  {nome.ljust(larghezza)}  {descrizione}")
     print(f"  {'exit'.ljust(larghezza)}  Termina la sessione (anche `quit`)")
-    print("\nCtrl+C interrompe il turno in corso; al prompt esce.")
+    print("\nCtrl+C interrompe il turno in corso; al prompt va premuto due volte per uscire.")
 
 
 def cmd_skill(state: SessionState, arg: str) -> None:
@@ -825,6 +854,8 @@ def handle_command(state: SessionState, user_input: str, tools: list[Tool], clie
         cmd_load(state, arg)
     elif command == "/model":
         cmd_model(state)
+    elif command == "/exit":
+        raise ExitSession
     else:
         return False
     return True
@@ -971,6 +1002,9 @@ def main(
         f"[Avviso] variabile opzionale {name} mancante: lo strumento corrispondente rispondera' errore."
         for name in check.optional_missing
     ]
+    # Due copie dello stesso file di contesto con testo diverso: il prompt se le porta
+    # dietro entrambe, di solito perche' la copia globale e' rimasta indietro.
+    startup_warnings.extend(f"[Avviso] {d}" for d in ctx.divergences)
 
     if reasoning not in REASONING_LEVELS:
         print(f"Errore: --reasoning non valido: {reasoning}. Usa: {', '.join(REASONING_LEVELS)}")
@@ -1104,21 +1138,33 @@ def main(
     print()
 
     leggi = make_reader()
+    interrupt_armed = False  # un Ctrl+C gia' ricevuto al prompt, in attesa del secondo
     while True:
         try:
             _prompt_rule()
             user_input = leggi(prompt_indicator(state)).strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print("\nArrivederci!")
             break
+        except KeyboardInterrupt:
+            if repl_interrupt(interrupt_armed):
+                break
+            interrupt_armed = True
+            continue
+        interrupt_armed = False
 
         if user_input.lower() in {"exit", "quit"}:
             print("Arrivederci!")
             break
         if not user_input:
             continue
-        if user_input.startswith("/") and handle_command(state, user_input, tools, client):
-            continue
+        if user_input.startswith("/"):
+            try:
+                if handle_command(state, user_input, tools, client):
+                    continue
+            except ExitSession:
+                print("Arrivederci!")
+                break
 
         # Una volta per turno, mai dentro il ciclo di step: l'agente puo' aver scritto una
         # memoria e l'indice nel system prompt va aggiornato, ma cambiare il prompt a ogni

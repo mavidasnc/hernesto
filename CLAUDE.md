@@ -62,7 +62,11 @@ cercati in `context/` prima della workdir e poi di `~/.config/ernesto/` (costant
 `CONTEXT_DIR`), più l'**indice delle memorie**. Tutti e tre i file si sommano con la stessa
 regola (`_load_pair`): prima la copia globale, poi quella del progetto, così le regole di
 base valgono anche dove il progetto ha le sue. Due copie identiche, o la stessa cartella
-in entrambi i ruoli, vengono caricate una volta sola.
+in entrambi i ruoli, vengono caricate una volta sola: il confronto passa da `_normalized()`
+(fine riga uniformi, niente spazi ai bordi), perché byte per byte non scatterebbe mai su
+una copia scritta con CRLF. Quando le due copie divergono davvero, `_load_pair` produce un
+messaggio che finisce in `Context.divergences` e che `cli.py` stampa fra gli avvisi di
+avvio; il blocco `solo-progetto` non conta come divergenza, lì la differenza è voluta.
 I file versionati stanno in `context/` e si installano con `install-context.py`, che
 esclude dalla copia globale il blocco `solo-progetto` di `identity.md`; quando la workdir è
 questo repo, `project_only_section()` carica dal file locale solo quel blocco, evitando di
@@ -91,9 +95,14 @@ mancano, la sessione parte lo stesso con un avviso.
 
 I comandi slash sono definiti **una volta sola** in `COMMANDS` (`cli.py`): da lì nascono il
 completamento del prompt, `/command` e l'aiuto, e un test verifica che l'elenco coincida con
-i rami di `handle_command`. Il prompt usa `prompt_toolkit` tramite `make_reader()`, che
-ricade su `input()` se il terminale non lo supporta: ogni nuova funzione del prompt deve
-restare dentro quel fallback.
+i rami di `handle_command`. `/exit` è l'unico comando che non si esaurisce nel dispatcher:
+solleva `ExitSession`, che il ciclo del REPL intercetta, perché il valore di ritorno di
+`handle_command` dice solo se il comando era riconosciuto. Il prompt usa `prompt_toolkit`
+tramite `make_reader()`, che ricade su `input()` se il terminale non lo supporta: ogni nuova
+funzione del prompt deve restare dentro quel fallback. Ctrl+C al prompt passa da
+`repl_interrupt()` e chiude solo al secondo colpo consecutivo; il flag si azzera dopo ogni
+riga letta. Il colore dell'interfaccia è la costante `PHOSPHOR` (banner, etichetta
+`Ernesto>`, badge `[?] ATTENZIONE`), applicata solo quando `sys.stdout.isatty()`.
 
 Le **skill** (`ernesto/skills.py`) sono conoscenza caricata su richiesta: `discover_skills`
 legge solo i frontmatter di `skills/<nome>/SKILL.md` (workdir e config dir, il progetto

@@ -328,3 +328,57 @@ def test_file_identico_nelle_due_posizioni_conta_una_volta(
     # il percorso resta noto: "identico al globale" non e' "non trovato"
     assert ctx.soul.origin == "duplicato"
     assert ctx.soul.path is not None
+
+
+def test_copie_diverse_solo_per_fine_riga_contano_una_volta(
+    workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CRLF contro LF e spazi finali non sono una differenza di contenuto.
+
+    install-context.py su Windows scrive la copia globale con CRLF: senza normalizzazione
+    il confronto fallirebbe sempre e il prompt si porterebbe dietro due volte lo stesso
+    testo.
+    """
+    fake_config = tmp_path / "config-home"
+    (fake_config / CONTEXT_DIR).mkdir(parents=True)
+    testo = "Prima riga.\nSeconda riga."
+    (fake_config / CONTEXT_DIR / "soul.md").write_bytes(b"Prima riga.\r\nSeconda riga.\r\n")
+    (_ctx(workdir) / "soul.md").write_text(testo, encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    ctx = load_context(workdir)
+    assert compose_system_prompt(ctx).count("Seconda riga.") == 1
+    assert ctx.soul.origin == "duplicato"
+    assert ctx.divergences == []
+
+
+def test_copie_divergenti_restano_entrambe_e_avvisano(
+    workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Due versioni diverse dello stesso file si sommano, ma la cosa viene segnalata."""
+    fake_config = tmp_path / "config-home"
+    (fake_config / CONTEXT_DIR).mkdir(parents=True)
+    (fake_config / CONTEXT_DIR / "soul.md").write_text("Versione vecchia.", encoding="utf-8")
+    (_ctx(workdir) / "soul.md").write_text("Versione nuova.", encoding="utf-8")
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    ctx = load_context(workdir)
+    prompt = compose_system_prompt(ctx)
+    assert "Versione vecchia." in prompt and "Versione nuova." in prompt
+    assert len(ctx.divergences) == 1
+    assert "soul.md" in ctx.divergences[0]
+
+
+def test_blocco_solo_progetto_non_e_una_divergenza(
+    workdir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Il repo sorgente ha per costruzione due file diversi: non e' un disallineamento."""
+    fake_config = tmp_path / "config-home"
+    (fake_config / CONTEXT_DIR).mkdir(parents=True)
+    (fake_config / CONTEXT_DIR / "identity.md").write_text("Regole generali.", encoding="utf-8")
+    (_ctx(workdir) / "identity.md").write_text(
+        "Regole generali.\n\n<!-- solo-progetto: inizio -->\nSolo qui.\n<!-- solo-progetto: fine -->",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("ernesto.context.config_dir", lambda: fake_config)
+    ctx = load_context(workdir)
+    assert ctx.divergences == []
+    assert compose_system_prompt(ctx).count("Regole generali.") == 1

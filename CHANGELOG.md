@@ -5,6 +5,18 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.18.0] - 2026-09-21
+
+### Aggiunto
+- **Comando `/exit`**: chiude la sessione come `exit` e `quit`, ma compare nel completamento e nell'elenco dei comandi, dove finora l'unico modo di uscire non era scritto da nessuna parte.
+- **Avviso quando le due copie di un file di contesto divergono**: se `soul.md`, `identity.md` o `credentials.md` esistono sia in `~/.config/ernesto/context/` sia nel progetto con testo diverso, l'avvio lo segnala e ricorda `install-context.py`. Il prompt continua a caricarle entrambe, come e' giusto per file che si sommano, ma la divergenza non e' piu' invisibile: sulla macchina di sviluppo la copia globale era rimasta indietro e il system prompt portava due varianti quasi identiche delle stesse regole.
+
+### Cambiato
+- **La deduplica dei file di contesto confronta il testo normalizzato** (fine riga uniformi, niente spazi ai bordi) invece dei byte. Il confronto esisteva gia' ma non scattava mai: `install-context.py` scriveva la copia globale con i fine riga della piattaforma, quindi su Windows CRLF contro LF bastava a farla sembrare un altro file. Niente hash: per confrontare due file bisogna comunque leggerli e scorrerli interi, e un digest aggiungerebbe solo lavoro a parita' di risultato.
+- **`install-context.py` scrive le copie con fine riga LF**, identiche alla sorgente.
+- **Verde fosforo al posto del ciano** nel banner, nell'etichetta `Ernesto>` e nel badge `[?] ATTENZIONE`: il verde dei primi terminali (indice 46 della tavolozza a 256 colori). Rosso del distruttivo e giallo dell'esterno restano.
+- **Ctrl+C al prompt va premuto due volte per uscire**: il primo avvisa, il secondo di fila chiude. Uscire al primo colpo era troppo facile da fare per sbaglio, credendo di essere in un'altra finestra. L'armamento non sopravvive a una riga letta, quindi due interruzioni lontane non si sommano, e Ctrl+C durante un turno continua a interrompere solo il turno.
+
 ## [0.17.0] - 2026-09-18
 
 ### Aggiunto

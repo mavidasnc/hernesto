@@ -171,6 +171,11 @@ Lo script le copia in `~/.config/ernesto/context/`, da dove valgono in **qualunq
 cartella di lavoro, e crea `workspace/projects/` e `memories/`. In `~/.config/ernesto/.env`
 conviene tenere le chiavi, lette come fallback quando il progetto non ne ha uno.
 
+Quando lo stesso file esiste in entrambe le posizioni ed è **lo stesso testo** (fine riga e
+spazi ai bordi non contano), viene caricato una volta sola. Se invece le due copie sono
+davvero diverse si sommano entrambe, e l'avvio lo segnala: di solito vuol dire che la copia
+globale è rimasta indietro e basta rilanciare `install-context.py`.
+
 `context/identity.md` contiene anche una sezione delimitata dai marcatori `solo-progetto`,
 riservata a questo repository: viene esclusa dalla copia globale, e quando si lavora qui
 dentro ernesto carica dal file locale solo quel blocco, così le regole generali non entrano
@@ -248,7 +253,8 @@ parte comunque con un avviso.
 | `/reasoning [livello]` | Mostra o cambia il livello di reasoning |
 | `/save` | Salva la sessione in `saves/` (`.txt` da leggere e `.json` da ricaricare) |
 | `/load` | Riprende una sessione salvata (`/load` apre l'elenco, `/load <nome>` va diretto) |
-| `exit` / `quit` / Ctrl+C | Termina |
+| `/exit` · `exit` · `quit` | Termina la sessione |
+| Ctrl+C | Interrompe il turno in corso; al prompt, premuto due volte, termina |
 
 Il prompt mostra sempre i cumulativi di sessione: `Tu [24.1k in · 6.3k out · $0.0082]>`.
 Digitando `/` compaiono i comandi con la descrizione: si filtrano scrivendo e si scelgono

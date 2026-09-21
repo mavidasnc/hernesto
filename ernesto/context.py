@@ -82,6 +82,9 @@ class Context:
     credentials: ContextFile = field(default_factory=lambda: ContextFile("credentials.md"))
     credentials_base: ContextFile = field(default_factory=lambda: ContextFile("credentials.md"))
     soul_mode: str = "append"  # "append" | "replace"
+    # Copie con lo stesso nome ma contenuto diverso nelle due posizioni: restano caricate
+    # entrambe, ma chi avvia deve saperlo (le stampa cli.py fra gli avvisi di avvio).
+    divergences: list[str] = field(default_factory=list)
     # Le memorie non sono file di contesto caricati: nel prompt entra solo il loro indice.
     memory_index: str = ""
     session_memory: str | None = None  # es. "memories/memory-20260917_094311.md"
@@ -98,8 +101,19 @@ def _read_file(name: str, base: Path, origin: str) -> ContextFile:
     return ContextFile(name)
 
 
-def _load_pair(name: str, workdir: Path) -> tuple[ContextFile, ContextFile]:
-    """Carica un file di contesto dalle due posizioni: (globale, progetto).
+def _normalized(text: str) -> str:
+    """Testo ridotto alla forma usata per il confronto fra le due copie.
+
+    Fine riga uniformi e niente spazi ai bordi: una copia installata su Windows esce con
+    CRLF mentre la sorgente ha LF, e due file cosi' sono lo stesso testo anche se non gli
+    stessi byte. Il confronto diretto delle stringhe e' piu' rapido di un hash, che
+    dovrebbe comunque leggere e scorrere tutto aggiungendoci il digest.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _load_pair(name: str, workdir: Path) -> tuple[ContextFile, ContextFile, str | None]:
+    """Carica un file di contesto dalle due posizioni: (globale, progetto, divergenza).
 
     Le due parti si sommano. Due casi particolari, gia' necessari per identity.md e ora
     validi per tutti i file:
@@ -108,22 +122,32 @@ def _load_pair(name: str, workdir: Path) -> tuple[ContextFile, ContextFile]:
     - il file di progetto e' la sorgente stessa del globale (contiene i marcatori
       `solo-progetto`): dal locale si prende solo quel blocco, altrimenti il generale
       entrerebbe due volte nel prompt.
+
+    La divergenza e' il messaggio da mostrare all'avvio quando le due copie esistono, sono
+    diverse davvero e nessuno dei due casi particolari le spiega: il prompt si porta dietro
+    due varianti dello stesso testo, di solito perche' il globale e' rimasto indietro.
     """
     base = _read_file(name, config_dir(), "config")
     progetto = _read_file(name, workdir, "workdir")
     if progetto.path is not None and progetto.path == base.path:
-        return ContextFile(name, base.path, None, "duplicato"), progetto
-    if base.content is not None and base.content == progetto.content:
+        return ContextFile(name, base.path, None, "duplicato"), progetto, None
+    if base.content is not None and _normalized(base.content) == _normalized(progetto.content or ""):
         # Stesso contenuto nelle due posizioni (tipico del repo che e' anche la sorgente
         # del globale): si tiene una copia sola, altrimenti il prompt la ripete. Il percorso
         # resta, con origine "duplicato": in /context files "identico al globale" e'
         # un'informazione diversa da "non trovato".
-        return base, ContextFile(name, progetto.path, None, "duplicato")
+        return base, ContextFile(name, progetto.path, None, "duplicato"), None
+    divergenza: str | None = None
     if base.content and progetto.content:
         solo_progetto = project_only_section(progetto.content)
         if solo_progetto is not None:
             progetto.content = solo_progetto
-    return base, progetto
+        else:
+            divergenza = (
+                f"{name}: la copia globale ({base.path}) differisce da quella del progetto; "
+                f"restano caricate entrambe. Allineale con install-context.py."
+            )
+    return base, progetto, divergenza
 
 
 def project_only_section(content: str) -> str | None:
@@ -171,9 +195,10 @@ def load_context(workdir: Path, session_memory: str | None = None) -> Context:
     Le memorie non vengono caricate: entra nel prompt solo il loro indice.
     """
     ctx = Context(workdir=workdir)
-    ctx.soul_base, ctx.soul = _load_pair("soul.md", workdir)
-    ctx.identity_base, ctx.identity = _load_pair("identity.md", workdir)
-    ctx.credentials_base, ctx.credentials = _load_pair("credentials.md", workdir)
+    ctx.soul_base, ctx.soul, soul_div = _load_pair("soul.md", workdir)
+    ctx.identity_base, ctx.identity, identity_div = _load_pair("identity.md", workdir)
+    ctx.credentials_base, ctx.credentials, credentials_div = _load_pair("credentials.md", workdir)
+    ctx.divergences = [d for d in (soul_div, identity_div, credentials_div) if d]
     ctx.session_memory = session_memory
     ctx.memory_index = memory_index(workdir, session_memory)
     # Il frontmatter `mode: replace` vale se sta in una qualsiasi delle due posizioni.
