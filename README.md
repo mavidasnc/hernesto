@@ -167,6 +167,9 @@ di questo repository e si installano una volta sola con:
 python install-context.py
 ```
 
+Lo stesso lavoro lo fa il comando `/install` dall'interno di una sessione, che mostra
+prima cosa cambierebbe e ricarica il contesto appena finito.
+
 Lo script le copia in `~/.config/ernesto/context/`, da dove valgono in **qualunque**
 cartella di lavoro, e crea `workspace/projects/` e `memories/`. In `~/.config/ernesto/.env`
 conviene tenere le chiavi, lette come fallback quando il progetto non ne ha uno.
@@ -247,6 +250,7 @@ parte comunque con un avviso.
 | `/clear` | Azzera la conversazione (mantiene log e conteggi cumulativi) |
 | `/compact` | Riassume subito i risultati strumento in storia (`/compact N` preserva N giri, `/compact llm` fa riassumere a un modello) |
 | `/yolo` | Attiva/disattiva il bypass delle conferme |
+| `/install` | Installa il contesto di base in `~/.config/ernesto/` (`/install diff` mostra solo cosa cambierebbe) |
 | `/tools` | Elenca gli strumenti registrati (nativi + MCP) |
 | `/log` | Percorso del log di sessione e riepilogo |
 | `/cost` | Costo cumulativo della sessione |

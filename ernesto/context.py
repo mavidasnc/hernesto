@@ -145,7 +145,7 @@ def _load_pair(name: str, workdir: Path) -> tuple[ContextFile, ContextFile, str 
         else:
             divergenza = (
                 f"{name}: la copia globale ({base.path}) differisce da quella del progetto; "
-                f"restano caricate entrambe. Allineale con install-context.py."
+                f"restano caricate entrambe. Allineale con /install."
             )
     return base, progetto, divergenza
 

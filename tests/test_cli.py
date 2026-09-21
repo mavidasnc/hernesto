@@ -14,6 +14,7 @@ from ernesto.cli import (
     ExitSession,
     _CommandCompleter,
     budget_report,
+    cmd_install,
     cmd_step,
     compose_prompt,
     handle_command,
@@ -205,3 +206,31 @@ def test_primo_ctrl_c_avvisa_e_il_secondo_esce(capsys: pytest.CaptureFixture[str
     assert "premi di nuovo" in capsys.readouterr().out.lower()
     assert repl_interrupt(True) is True
     assert "Arrivederci" in capsys.readouterr().out
+
+
+def test_install_senza_script_non_esplode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Fuori dalla cartella di ernesto il comando lo dice, invece di fallire."""
+    monkeypatch.setattr("ernesto.cli.install_script", lambda: tmp_path / "install-context.py")
+    cmd_install(SimpleNamespace(), "")  # type: ignore[arg-type]
+    assert "non trovato" in capsys.readouterr().out
+
+
+FINTO_INSTALL = """import sys
+print("argomenti:", " ".join(sys.argv[1:]))
+print("! soul.md da aggiornare")
+"""
+
+
+def test_install_diff_mostra_e_non_copia(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`/install diff` esegue lo script in sola anteprima e si ferma li'."""
+    finto = tmp_path / "install-context.py"
+    finto.write_text(FINTO_INSTALL, encoding="utf-8")
+    monkeypatch.setattr("ernesto.cli.install_script", lambda: finto)
+    cmd_install(SimpleNamespace(), "diff")  # type: ignore[arg-type]
+    out = capsys.readouterr().out
+    assert "argomenti: --diff" in out
+    assert "Copiare i file" not in out

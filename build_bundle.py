@@ -40,6 +40,9 @@ SOURCES = (
     "ernesto",
     "ernesto.py",
     "context",
+    # Sul computer nuovo il contesto di base va installato: senza lo script, /install
+    # non ha niente da eseguire.
+    "install-context.py",
     "skills",
     "playbooks",
     "requirements.txt",

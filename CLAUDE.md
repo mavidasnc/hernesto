@@ -67,6 +67,10 @@ in entrambi i ruoli, vengono caricate una volta sola: il confronto passa da `_no
 una copia scritta con CRLF. Quando le due copie divergono davvero, `_load_pair` produce un
 messaggio che finisce in `Context.divergences` e che `cli.py` stampa fra gli avvisi di
 avvio; il blocco `solo-progetto` non conta come divergenza, lì la differenza è voluta.
+Il comando `/install` (`cmd_install`) esegue `install-context.py` in subprocess, prima con
+`--diff` e poi con `--force`: la copia ha una sola implementazione, quella dello script,
+e a fine copia il contesto viene ricaricato perché il prompt in sessione è quello letto
+all'avvio.
 I file versionati stanno in `context/` e si installano con `install-context.py`, che
 esclude dalla copia globale il blocco `solo-progetto` di `identity.md`; quando la workdir è
 questo repo, `project_only_section()` carica dal file locale solo quel blocco, evitando di

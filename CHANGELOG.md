@@ -5,6 +5,15 @@ Tutte le modifiche rilevanti a questo progetto sono documentate in questo file.
 Il formato è basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.19.0] - 2026-09-21
+
+### Aggiunto
+- **Comando `/install`**: installa il contesto di base in `~/.config/ernesto/context/` senza uscire dalla sessione. Mostra prima l'anteprima (`install-context.py --diff`), chiede conferma solo se c'e' davvero qualcosa da copiare, poi ricarica il contesto e ricompone il system prompt, che altrimenti resterebbe quello letto all'avvio. `/install diff` si ferma all'anteprima. La copia resta tutta nello script, eseguito in subprocess: riscriverla dentro la CLI vorrebbe dire mantenerne due versioni destinate a divergere, cioe' il problema che il comando risolve.
+- **`install-context.py` entra nel bundle**: sul computer nuovo il contesto di base va installato, e senza lo script `/install` non avrebbe niente da eseguire.
+
+### Cambiato
+- L'avviso di divergenza fra le due copie di un file di contesto rimanda a `/install` invece che allo script da lanciare a mano.
+
 ## [0.18.0] - 2026-09-21
 
 ### Aggiunto

@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from datetime import datetime
@@ -115,6 +116,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("/log", "Percorso del log e riepilogo della sessione"),
     ("/cost", "Costo cumulativo della sessione"),
     ("/yolo", "Attiva o disattiva il bypass delle conferme"),
+    ("/install", "Installa il contesto di base in ~/.config/ernesto (`diff` mostra solo cosa cambia)"),
     ("/exit", "Termina la sessione (come `exit` o `quit`)"),
 ]
 
@@ -702,6 +704,64 @@ def _pick_skill(disponibili: list[Skill], attive: list[str]) -> str:
     return disponibili[scelto].name if scelto >= 0 else ""
 
 
+def install_script() -> Path:
+    """Percorso di install-context.py, che sta accanto al package e non dentro."""
+    return Path(__file__).resolve().parent.parent / "install-context.py"
+
+
+def cmd_install(state: SessionState, arg: str) -> None:
+    """Installa il contesto di base in ~/.config/ernesto/: /install [diff].
+
+    La copia resta tutta in install-context.py, eseguito in subprocess: prima con --diff
+    per mostrare cosa cambierebbe, poi con --force se l'utente conferma. Rifarla qui
+    dentro vorrebbe dire mantenerne due versioni che prima o poi divergono, cioe' proprio
+    il problema che il comando serve a risolvere.
+    """
+    script = install_script()
+    if not script.is_file():
+        print(f"install-context.py non trovato ({script}): il comando funziona dalla cartella di ernesto.")
+        return
+    # Il figlio scrive in utf-8 invece che nella codepage: su Windows evita i punti
+    # interrogativi al posto degli accenti nei messaggi dello script.
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    try:
+        anteprima = subprocess.run(
+            [sys.executable, str(script), "--diff"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=script.parent, env=env, check=False,
+        )
+    except OSError as exc:
+        print(f"Impossibile eseguire install-context.py: {exc}")
+        return
+    print((anteprima.stdout + anteprima.stderr).strip())
+    if arg.strip().lower() == "diff":
+        return
+    if not any(riga.startswith("!") for riga in anteprima.stdout.splitlines()):
+        print("Niente da fare: la copia globale e' gia' allineata a context/.")
+        return
+    if not sys.stdin.isatty():
+        print("Nessuno al terminale: niente copiato. Esegui `python install-context.py` a mano.")
+        return
+    try:
+        procedi = bool(
+            questionary.confirm(
+                f"Copiare i file segnati con ! in {config_dir() / CONTEXT_DIR}?", default=False
+            ).ask()
+        )
+    except (KeyboardInterrupt, EOFError):
+        procedi = False
+    if not procedi:
+        print("Annullato.")
+        return
+    # Senza capture l'output dello script esce dritto a schermo, mentre copia.
+    subprocess.run([sys.executable, str(script), "--force"], cwd=script.parent, env=env, check=False)
+    # Il contesto in sessione e' quello letto all'avvio: senza ricarica il prompt
+    # resterebbe quello di prima della copia fino al prossimo riavvio.
+    state.context = load_context(state.workdir, state.context.session_memory)
+    state.refresh_system_prompt(force=True)
+    print(f"[Contesto] ricaricato — {summary_line(state.context)}")
+
+
 def cmd_tools(tools: list[Tool]) -> None:
     """Elenca gli strumenti registrati (nativi + MCP) con descrizione breve."""
     print(f"Strumenti registrati ({len(tools)}):")
@@ -831,6 +891,8 @@ def handle_command(state: SessionState, user_input: str, tools: list[Tool], clie
         cmd_yolo(state)
     elif command == "/skill":
         cmd_skill(state, arg)
+    elif command == "/install":
+        cmd_install(state, arg)
     elif command == "/tools":
         cmd_tools(tools)
     elif command == "/log":
